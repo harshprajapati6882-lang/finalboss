@@ -163,20 +163,12 @@ export function NewOrderPage({ apis, bundles, orders, prefillOrder, onCreateOrde
 
     let multiplier = 1;
 
-    // 🌙 Night → slower
     if (hour >= 0 && hour < 6) multiplier = 1.4;
-
-    // 🌅 Morning → normal
     else if (hour >= 6 && hour < 12) multiplier = 1.1;
-
-    // 🌆 Evening → faster
     else if (hour >= 18 && hour <= 23) multiplier = 0.85;
 
     const baseIntervalMs = baseIntervalMin * 60 * 1000 * multiplier;
-
-    // ±20% randomness
     const variation = baseIntervalMs * (Math.random() * 0.4 - 0.2);
-
     const newTime = prevTime + baseIntervalMs + variation;
 
     return {
@@ -209,9 +201,12 @@ export function NewOrderPage({ apis, bundles, orders, prefillOrder, onCreateOrde
   return (
     <div className="mx-auto max-w-7xl space-y-6 px-6 py-7">
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
-        <h2 className="text-2xl font-semibold tracking-tight text-white">New Order</h2>
-        <p className="mt-1 text-sm text-slate-400">
-          Configure view delivery patterns and engagement distribution. Frontend-only model, ready for API wiring.
+        <div className="flex items-center gap-3">
+          <span className="text-3xl">⚡</span>
+          <h2 className="text-2xl font-bold tracking-tight text-yellow-400">New Mission</h2>
+        </div>
+        <p className="mt-1 text-sm text-gray-500">
+          Configure view delivery patterns and engagement distribution. Prepare your next operation.
         </p>
       </motion.div>
 
@@ -286,23 +281,23 @@ export function NewOrderPage({ apis, bundles, orders, prefillOrder, onCreateOrde
         />
 
         <div className="space-y-6">
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-5">
-            <h2 className="text-lg font-semibold text-white">Detection Risk</h2>
-            <p className="mt-2 text-sm text-slate-400">Based on variance and delivery speed</p>
-            <div className="mt-4 inline-flex rounded-lg border border-slate-700 bg-[#0d1424] px-4 py-2">
+          <div className="rounded-2xl border border-yellow-500/20 bg-gradient-to-br from-gray-900 to-black p-5">
+            <h2 className="text-lg font-semibold text-yellow-400">🎯 Detection Risk</h2>
+            <p className="mt-2 text-sm text-gray-500">Based on variance and delivery speed</p>
+            <div className="mt-4 inline-flex rounded-lg border border-yellow-500/30 bg-black px-4 py-2">
               <span
                 className={`text-sm font-semibold ${
                   safePlan.risk === "Safe"
-                    ? "text-emerald-300"
+                    ? "text-emerald-400"
                     : safePlan.risk === "Medium"
-                      ? "text-amber-300"
-                      : "text-rose-300"
+                      ? "text-yellow-400"
+                      : "text-red-400"
                 }`}
               >
                 {safePlan.risk}
               </span>
             </div>
-            <p className="mt-3 text-xs text-slate-500">Estimated duration: {safePlan.estimatedDurationHours}h</p>
+            <p className="mt-3 text-xs text-gray-600">Estimated duration: {safePlan.estimatedDurationHours}h</p>
           </div>
 
           <PatternGenerator
@@ -343,8 +338,8 @@ export function NewOrderPage({ apis, bundles, orders, prefillOrder, onCreateOrde
 
       <GrowthGraph plan={safePlan} />
 
-      <div className="flex flex-wrap items-center justify-between rounded-2xl border border-slate-800 bg-slate-900/30 p-4">
-        <p className="text-sm text-slate-400">Create order will store the current plan, schedule, and engagement data.</p>
+      <div className="flex flex-wrap items-center justify-between rounded-2xl border border-yellow-500/20 bg-gradient-to-br from-gray-900 to-black p-4">
+        <p className="text-sm text-gray-500">Create mission will store the current plan, schedule, and engagement data.</p>
         <button
           type="button"
           disabled={isCreatingOrder}
@@ -352,7 +347,7 @@ export function NewOrderPage({ apis, bundles, orders, prefillOrder, onCreateOrde
             setCreateError("");
             setCreateSuccess("");
             if (!selectedBundleId) {
-              setCreateError("Select a bundle before creating an order.");
+              setCreateError("Select a bundle before creating a mission.");
               return;
             }
             const bulkTargets = bulkLinks
@@ -362,7 +357,7 @@ export function NewOrderPage({ apis, bundles, orders, prefillOrder, onCreateOrde
             const singleTarget = postUrl.trim();
             const targets = bulkTargets.length > 0 ? bulkTargets : singleTarget ? [singleTarget] : [];
             if (!targets.length) {
-              setCreateError("Add a post URL or paste multiple links before creating an order.");
+              setCreateError("Add a post URL or paste multiple links before creating a mission.");
               return;
             }
             const invalidTarget = targets.find((target) => !isValidUrl(target));
@@ -373,7 +368,7 @@ export function NewOrderPage({ apis, bundles, orders, prefillOrder, onCreateOrde
 
             const selectedApi = apis.find((api) => api.id === selectedApiId) ?? null;
             if (!selectedApi) {
-              setCreateError("Select an API before creating an order.");
+              setCreateError("Select an API before creating a mission.");
               return;
             }
             if (!selectedApi.url.trim()) {
@@ -443,7 +438,7 @@ export function NewOrderPage({ apis, bundles, orders, prefillOrder, onCreateOrde
             }
 
             if (quantity > 100000) {
-              const proceed = window.confirm("Are you sure? This is a large order.");
+              const proceed = window.confirm("Are you sure? This is a large mission.");
               if (!proceed) {
                 return;
               }
@@ -460,7 +455,6 @@ export function NewOrderPage({ apis, bundles, orders, prefillOrder, onCreateOrde
               return;
             }
 
-            // Preserve run index alignment across services by sending the full run arrays, including zeros.
             const likesRuns = (safePlan?.runs || []).map((run) => ({
               time: run.at.toISOString(),
               quantity: Math.max(0, Math.floor(run.likes)),
@@ -506,22 +500,18 @@ export function NewOrderPage({ apis, bundles, orders, prefillOrder, onCreateOrde
             }
 
             setIsCreatingOrder(true);
-            setCreateSuccess(`Processing ${targets.length} orders...`);
+            setCreateSuccess(`Processing ${targets.length} missions...`);
             try {
               const activeLinks = new Set(
                 orders
                   .filter((order) => {
                     const now = Date.now();
-
                     const runs = order.runs || [];
-
                     if (!runs.length) return false;
-
                     const allRunsCompleted = runs.every((run) => {
                       const runTime = new Date(run.at).getTime();
                       return runTime <= now;
                     });
-
                     return !allRunsCompleted && order.status !== "cancelled";
                   })
                   .map((order) => order.link.replace(/\/+$/, "").toLowerCase())
@@ -536,7 +526,7 @@ export function NewOrderPage({ apis, bundles, orders, prefillOrder, onCreateOrde
                 const normalizedTarget = trimmedUrl.replace(/\/+$/, "").toLowerCase();
                 if (activeLinks.has(normalizedTarget) || createdLinks.has(normalizedTarget)) {
                   failedCount += 1;
-                  lastError = "Warning: An active order with the same link already exists.";
+                  lastError = "Warning: An active mission with the same link already exists.";
                   continue;
                 }
 
@@ -576,7 +566,7 @@ export function NewOrderPage({ apis, bundles, orders, prefillOrder, onCreateOrde
                   };
 
                   if (!order.name) {
-                    order.name = `Order #${order.id}`;
+                    order.name = `Mission #${order.id}`;
                   } else if (targets.length > 1) {
                     order.name = `${order.name} #${index + 1}`;
                   }
@@ -585,7 +575,7 @@ export function NewOrderPage({ apis, bundles, orders, prefillOrder, onCreateOrde
                   createdLinks.add(normalizedTarget);
                   successCount += 1;
                 } catch (error) {
-                  const message = error instanceof Error ? error.message : "Failed to create order";
+                  const message = error instanceof Error ? error.message : "Failed to create mission";
                   const failedOrder: CreatedOrder = {
                     id: createOrderId(),
                     name: orderName.trim() || "",
@@ -613,7 +603,7 @@ export function NewOrderPage({ apis, bundles, orders, prefillOrder, onCreateOrde
                     lastUpdatedAt: new Date().toISOString(),
                   };
                   if (!failedOrder.name) {
-                    failedOrder.name = `Order #${failedOrder.id}`;
+                    failedOrder.name = `Mission #${failedOrder.id}`;
                   } else if (targets.length > 1) {
                     failedOrder.name = `${failedOrder.name} #${index + 1}`;
                   }
@@ -624,31 +614,31 @@ export function NewOrderPage({ apis, bundles, orders, prefillOrder, onCreateOrde
               }
 
               if (failedCount > 0 && successCount === 0) {
-                setCreateError(lastError || "Failed to create orders.");
+                setCreateError(lastError || "Failed to create missions.");
                 setCreateSuccess("");
                 return;
               }
 
               const successLabel =
                 targets.length > 1
-                  ? `Processed ${targets.length} orders. Success: ${successCount}, Failed: ${failedCount}`
-                  : "Order Scheduled Successfully";
+                  ? `Processed ${targets.length} missions. Success: ${successCount}, Failed: ${failedCount}`
+                  : "Mission Deployed Successfully";
               setCreateSuccess(successLabel);
               if (failedCount > 0) {
-                setCreateError(`Some orders failed. Last error: ${lastError}`);
+                setCreateError(`Some missions failed. Last error: ${lastError}`);
               }
               onNavigateToOrders(successLabel);
             } finally {
               setIsCreatingOrder(false);
             }
           }}
-          className="rounded-lg border border-cyan-400/70 bg-cyan-500/10 px-4 py-2 text-sm font-semibold text-cyan-200 transition hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-lg border border-yellow-500/50 bg-yellow-500/20 px-4 py-2 text-sm font-semibold text-yellow-300 transition hover:bg-yellow-500/30 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {isCreatingOrder ? "Creating..." : "Create Order"}
+          {isCreatingOrder ? "Deploying..." : "🦇 Deploy Mission"}
         </button>
       </div>
-      {createError && <p className="text-sm text-rose-300">{createError}</p>}
-      {createSuccess && <p className="text-sm text-emerald-300">{createSuccess}</p>}
+      {createError && <p className="text-sm text-red-400">{createError}</p>}
+      {createSuccess && <p className="text-sm text-emerald-400">{createSuccess}</p>}
     </div>
   );
 }
