@@ -206,7 +206,7 @@ export default function App() {
         />
       );
     }
-    if (activePage === "apis") {
+        if (activePage === "apis") {
       return (
         <APIsPage
           apis={apis}
@@ -222,6 +222,18 @@ export default function App() {
                 services: [],
               },
             ];
+            persistApis(next);
+          }}
+          onEditApi={(id, api) => {
+            const next: ApiPanel[] = apis.map((item) =>
+              item.id === id
+                ? { ...item, name: api.name, url: api.url, key: api.key }
+                : item
+            );
+            persistApis(next);
+          }}
+          onDeleteApi={(id) => {
+            const next = apis.filter((api) => api.id !== id);
             persistApis(next);
           }}
           onToggleStatus={(id) => {
