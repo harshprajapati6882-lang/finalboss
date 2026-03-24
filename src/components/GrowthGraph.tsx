@@ -100,8 +100,8 @@ export function GrowthGraph({ plan }: GrowthGraphProps) {
   const curveType = lineTypeForPattern(safePlan.patternType);
 
   return (
-    <section className="rounded-2xl border border-slate-800 bg-slate-900/30 p-5">
-      <h2 className="mb-4 text-lg font-semibold text-white">5. Live Organic Growth Graph</h2>
+    <section className="rounded-2xl border border-yellow-500/20 bg-gradient-to-br from-gray-900 to-black p-5">
+      <h2 className="mb-4 text-lg font-semibold text-yellow-400">5. Growth Projection</h2>
       <motion.div
         key={`${safePlan.patternId}-${safePlan.totalRuns}`}
         initial={{ opacity: 0, y: 10 }}
@@ -111,20 +111,20 @@ export function GrowthGraph({ plan }: GrowthGraphProps) {
       >
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={chartData} margin={{ top: 14, right: 20, left: 0, bottom: 4 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-            <XAxis dataKey="label" tick={{ fill: "#94a3b8", fontSize: 11 }} minTickGap={26} />
-            <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} width={52} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+            <XAxis dataKey="label" tick={{ fill: "#9ca3af", fontSize: 11 }} minTickGap={26} />
+            <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} width={52} />
             <Tooltip
               contentStyle={{
-                background: "#0f172a",
-                border: "1px solid #334155",
+                background: "#000000",
+                border: "1px solid #eab308",
                 borderRadius: "0.75rem",
-                color: "#e2e8f0",
+                color: "#d1d5db",
                 fontSize: "12px",
               }}
             />
-            <Legend wrapperStyle={{ fontSize: "12px", color: "#cbd5e1" }} />
-            <Line type={curveType} dataKey="views" name="Views" stroke="#22d3ee" strokeWidth={2.5} dot={false} isAnimationActive animationDuration={900} />
+            <Legend wrapperStyle={{ fontSize: "12px", color: "#d1d5db" }} />
+            <Line type={curveType} dataKey="views" name="Views" stroke="#eab308" strokeWidth={2.5} dot={false} isAnimationActive animationDuration={900} />
             <Line type={curveType} dataKey="likes" name="Likes" stroke="#a78bfa" strokeWidth={1.8} dot={false} isAnimationActive animationDuration={900} />
             <Line type={curveType} dataKey="shares" name="Shares" stroke="#f59e0b" strokeWidth={1.8} dot={false} isAnimationActive animationDuration={900} />
             <Line type={curveType} dataKey="saves" name="Saves" stroke="#34d399" strokeWidth={1.8} dot={false} isAnimationActive animationDuration={900} />
