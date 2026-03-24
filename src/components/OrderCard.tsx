@@ -54,7 +54,11 @@ export function OrderCard({ order, onControl, onClone, controlBusy }: OrderCardP
     return { totalRuns: nextTotalRuns, completedRuns: nextCompletedRuns, progressPercent: nextProgressPercent };
   }, [safeRuns, safeRunStatuses, order.status, order.completedRuns, nowMs]);
 
-  const effectiveStatus = order.status === "processing" ? "running" : order.status;
+  const effectiveStatus = useMemo(() => {
+  if (completedRuns >= totalRuns) return "completed";
+  if (order.status === "processing") return "running";
+  return order.status;
+  }, [order.status, completedRuns, totalRuns]);
   const shortLink =
     order.link.length > 56 ? `${order.link.slice(0, 36)}...${order.link.slice(-14)}` : order.link;
 
