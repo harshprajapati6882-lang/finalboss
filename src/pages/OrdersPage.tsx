@@ -24,7 +24,20 @@ export function OrdersPage({
   const [openedOrderId, setOpenedOrderId] = useState<string | null>(null);
 
   const filteredOrders = useMemo(() => {
-    const groupedOrders = useMemo(() => {
+    const value = query.trim().toLowerCase();
+    if (!value) return orders;
+    return orders.filter(
+      (order) => (order.name || "").toLowerCase().includes(value) || (order.link || "").toLowerCase().includes(value)
+    );
+  }, [orders, query]);
+
+  useEffect(() => {
+    if (!openedOrderId) return;
+    const stillExists = orders.some((order) => order.id === openedOrderId);
+    if (!stillExists) setOpenedOrderId(null);
+  }, [orders, openedOrderId]);
+
+  const groupedOrders = useMemo(() => {
       const scheduled = [];
       const running = [];
       const completed = [];
@@ -39,18 +52,6 @@ export function OrdersPage({
 
       return { scheduled, running, completed };
     }, [filteredOrders]);
-    const value = query.trim().toLowerCase();
-    if (!value) return orders;
-    return orders.filter(
-      (order) => (order.name || "").toLowerCase().includes(value) || (order.link || "").toLowerCase().includes(value)
-    );
-  }, [orders, query]);
-
-  useEffect(() => {
-    if (!openedOrderId) return;
-    const stillExists = orders.some((order) => order.id === openedOrderId);
-    if (!stillExists) setOpenedOrderId(null);
-  }, [orders, openedOrderId]);
 
   const openedOrder = useMemo(() => orders.find((order) => order.id === openedOrderId) ?? null, [orders, openedOrderId]);
 
