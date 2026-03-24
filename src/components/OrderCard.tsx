@@ -11,12 +11,12 @@ interface OrderCardProps {
 }
 
 const statusColor: Record<OrderStatus, string> = {
-  running: "text-emerald-300",
+  running: "text-yellow-300",
   paused: "text-amber-300",
-  cancelled: "text-rose-300",
-  completed: "text-cyan-300",
-  processing: "text-emerald-300",
-  failed: "text-rose-300",
+  cancelled: "text-red-300",
+  completed: "text-emerald-300",
+  processing: "text-yellow-300",
+  failed: "text-red-300",
 };
 
 export function OrderCard({ order, onControl, onClone, controlBusy }: OrderCardProps) {
@@ -74,11 +74,10 @@ export function OrderCard({ order, onControl, onClone, controlBusy }: OrderCardP
   const shortLink =
     order.link.length > 56 ? `${order.link.slice(0, 36)}...${order.link.slice(-14)}` : order.link;
 
-  // 🔥 UPDATED CONTROL FUNCTION (REAL CANCEL)
   const handleControl = async (action: "pause" | "resume" | "cancel") => {
     try {
       if (action === "cancel") {
-        const confirmCancel = window.confirm("Are you sure you want to cancel this order?");
+        const confirmCancel = window.confirm("Are you sure you want to cancel this mission?");
         if (!confirmCancel) return;
 
         await fetch("https://backend-y30y.onrender.com/api/cancel", {
@@ -92,7 +91,6 @@ export function OrderCard({ order, onControl, onClone, controlBusy }: OrderCardP
         });
       }
 
-      // keep existing behavior
       onControl(order, action);
 
     } catch (err) {
@@ -102,36 +100,36 @@ export function OrderCard({ order, onControl, onClone, controlBusy }: OrderCardP
   };
 
   return (
-    <article className="rounded-2xl border border-slate-800 bg-slate-900/30 p-5">
+    <article className="rounded-2xl border border-yellow-500/20 bg-gradient-to-br from-gray-900 to-black p-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-2">
-          <p className="text-xs uppercase tracking-wide text-slate-500">Order ID</p>
-          <h3 className="text-lg font-semibold text-white">{order.id}</h3>
-          <p className="text-sm text-cyan-200">{order.name || `Order #${order.id}`}</p>
-          <p className="max-w-xl truncate text-sm text-slate-400" title={order.link || "No link provided"}>
+          <p className="text-xs uppercase tracking-wide text-gray-600">Mission ID</p>
+          <h3 className="text-lg font-semibold text-yellow-400">{order.id}</h3>
+          <p className="text-sm text-yellow-300">{order.name || `Mission #${order.id}`}</p>
+          <p className="max-w-xl truncate text-sm text-gray-500" title={order.link || "No link provided"}>
             {shortLink || "No link provided"}
           </p>
         </div>
         <div className="space-y-2 text-right">
-          <p className="text-sm text-slate-400">Panel Order ID: <span className="font-semibold text-cyan-200">{order.smmOrderId}</span></p>
-          <p className="text-sm text-slate-400">Service: <span className="font-semibold text-slate-100">{order.serviceId}</span></p>
-          <p className="text-sm text-slate-400">Quantity: <span className="font-semibold text-slate-100">{order.totalViews}</span></p>
-          <p className="text-sm text-slate-400">Status: <span className={`font-semibold ${statusColor[effectiveStatus]}`}>{effectiveStatus}</span></p>
-          {order.errorMessage && <p className="text-xs text-rose-300">Error: {order.errorMessage}</p>}
-          {finishTime && <p className="text-xs text-slate-500">Finish ETA: {finishTime.toLocaleString()}</p>}
-          <p className="text-xs text-slate-500">Last Update: {new Date(order.lastUpdatedAt || order.createdAt).toLocaleString()}</p>
+          <p className="text-sm text-gray-500">Panel ID: <span className="font-semibold text-yellow-300">{order.smmOrderId}</span></p>
+          <p className="text-sm text-gray-500">Service: <span className="font-semibold text-gray-300">{order.serviceId}</span></p>
+          <p className="text-sm text-gray-500">Quantity: <span className="font-semibold text-gray-300">{order.totalViews}</span></p>
+          <p className="text-sm text-gray-500">Status: <span className={`font-semibold ${statusColor[effectiveStatus]}`}>{effectiveStatus}</span></p>
+          {order.errorMessage && <p className="text-xs text-red-400">Error: {order.errorMessage}</p>}
+          {finishTime && <p className="text-xs text-gray-600">ETA: {finishTime.toLocaleString()}</p>}
+          <p className="text-xs text-gray-600">Updated: {new Date(order.lastUpdatedAt || order.createdAt).toLocaleString()}</p>
         </div>
       </div>
 
       <div className="mt-4 space-y-2">
-        <div className="flex items-center justify-between text-xs text-slate-400">
+        <div className="flex items-center justify-between text-xs text-gray-500">
           <span>Progress</span>
           <span>{progressPercent}%</span>
         </div>
-        <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
-          <div className="h-full rounded-full bg-cyan-400/80 transition-all" style={{ width: `${progressPercent}%` }} />
+        <div className="h-2 w-full overflow-hidden rounded-full bg-gray-800">
+          <div className="h-full rounded-full bg-yellow-500 transition-all" style={{ width: `${progressPercent}%` }} />
         </div>
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-gray-500">
           {completedRuns} / {totalRuns} runs completed
         </p>
       </div>
@@ -141,7 +139,7 @@ export function OrderCard({ order, onControl, onClone, controlBusy }: OrderCardP
           type="button"
           disabled={controlBusy || effectiveStatus !== "running"}
           onClick={() => handleControl("pause")}
-          className="rounded-lg border border-amber-500/50 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-200 transition hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-lg border border-amber-500/50 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-300 transition hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-50"
         >
           Pause
         </button>
@@ -149,7 +147,7 @@ export function OrderCard({ order, onControl, onClone, controlBusy }: OrderCardP
           type="button"
           disabled={controlBusy || effectiveStatus !== "paused"}
           onClick={() => handleControl("resume")}
-          className="rounded-lg border border-emerald-500/50 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-200 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-lg border border-emerald-500/50 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-300 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
         >
           Resume
         </button>
@@ -157,21 +155,21 @@ export function OrderCard({ order, onControl, onClone, controlBusy }: OrderCardP
           type="button"
           disabled={controlBusy || effectiveStatus === "cancelled" || effectiveStatus === "completed"}
           onClick={() => handleControl("cancel")}
-          className="rounded-lg border border-rose-500/50 bg-rose-500/10 px-3 py-1.5 text-xs text-rose-200 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-lg border border-red-500/50 bg-red-500/10 px-3 py-1.5 text-xs text-red-300 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
         >
           Cancel
         </button>
         <button
           type="button"
           onClick={() => onClone(order)}
-          className="rounded-lg border border-cyan-500/50 bg-cyan-500/10 px-3 py-1.5 text-xs text-cyan-200 transition hover:bg-cyan-500/20"
+          className="rounded-lg border border-yellow-500/50 bg-yellow-500/10 px-3 py-1.5 text-xs text-yellow-300 transition hover:bg-yellow-500/20"
         >
           Clone
         </button>
         <button
           type="button"
           onClick={() => setExpanded((prev) => !prev)}
-          className="ml-auto text-sm text-cyan-300 hover:text-cyan-200"
+          className="ml-auto text-sm text-yellow-400 hover:text-yellow-300"
         >
           {expanded ? "Hide Runs" : "View Runs"}
         </button>
