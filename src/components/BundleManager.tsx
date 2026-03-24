@@ -78,7 +78,10 @@ export function BundleManager({ apis, bundles, onAddBundle, onUpdateBundle, onDe
   return (
     <section className="space-y-5">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-semibold tracking-tight text-white">Bundles</h2>
+        <div className="flex items-center gap-3">
+          <span className="text-2xl">📁</span>
+          <h2 className="text-2xl font-bold tracking-tight text-yellow-400">Arsenal Bundles</h2>
+        </div>
         <button
           type="button"
           onClick={() => {
@@ -88,7 +91,7 @@ export function BundleManager({ apis, bundles, onAddBundle, onUpdateBundle, onDe
             }
             setShowForm(true);
           }}
-          className="rounded-lg border border-cyan-400/60 bg-cyan-500/10 px-3 py-2 text-sm text-cyan-200"
+          className="rounded-lg border border-yellow-500/50 bg-yellow-500/10 px-4 py-2 text-sm font-medium text-yellow-300 transition hover:bg-yellow-500/20"
         >
           {showForm ? "Close" : "➕ Create Bundle"}
         </button>
@@ -116,16 +119,16 @@ export function BundleManager({ apis, bundles, onAddBundle, onUpdateBundle, onDe
             }
             resetForm();
           }}
-          className="grid gap-3 rounded-2xl border border-slate-800 bg-slate-900/30 p-5 md:grid-cols-2"
+          className="grid gap-3 rounded-2xl border border-yellow-500/30 bg-gradient-to-br from-gray-900 to-black p-5 md:grid-cols-2"
         >
           <input
             value={name}
             onChange={(event) => setName(event.target.value)}
             placeholder="Bundle Name"
-            className="rounded-xl border border-slate-700 bg-[#0d1424] px-3 py-2.5 text-sm text-slate-100 md:col-span-2"
+            className="rounded-xl border border-yellow-500/30 bg-black px-3 py-2.5 text-sm text-gray-100 placeholder-gray-600 outline-none focus:border-yellow-500/50 md:col-span-2"
           />
 
-          <p className="text-xs uppercase tracking-wide text-slate-500 md:col-span-2">Bundle Creator</p>
+          <p className="text-xs uppercase tracking-wide text-gray-600 md:col-span-2">Bundle Configuration</p>
 
           <select
             value={apiId}
@@ -136,7 +139,7 @@ export function BundleManager({ apis, bundles, onAddBundle, onUpdateBundle, onDe
               setShares("");
               setSaves("");
             }}
-            className="rounded-xl border border-slate-700 bg-[#0d1424] px-3 py-2.5 text-sm text-slate-100 md:col-span-2"
+            className="rounded-xl border border-yellow-500/30 bg-black px-3 py-2.5 text-sm text-gray-100 md:col-span-2"
           >
             <option value="">Select API Panel</option>
             {apis.map((api) => (
@@ -148,7 +151,7 @@ export function BundleManager({ apis, bundles, onAddBundle, onUpdateBundle, onDe
           <select
             value={views}
             onChange={(event) => setViews(event.target.value)}
-            className="rounded-xl border border-slate-700 bg-[#0d1424] px-3 py-2.5 text-sm text-slate-100"
+            className="rounded-xl border border-yellow-500/30 bg-black px-3 py-2.5 text-sm text-gray-100"
           >
             <option value="">Views Service</option>
             {viewOptions.map((service) => (
@@ -161,7 +164,7 @@ export function BundleManager({ apis, bundles, onAddBundle, onUpdateBundle, onDe
           <select
             value={likes}
             onChange={(event) => setLikes(event.target.value)}
-            className="rounded-xl border border-slate-700 bg-[#0d1424] px-3 py-2.5 text-sm text-slate-100"
+            className="rounded-xl border border-yellow-500/30 bg-black px-3 py-2.5 text-sm text-gray-100"
           >
             <option value="">Likes Service</option>
             {likeOptions.map((service) => (
@@ -174,7 +177,7 @@ export function BundleManager({ apis, bundles, onAddBundle, onUpdateBundle, onDe
           <select
             value={shares}
             onChange={(event) => setShares(event.target.value)}
-            className="rounded-xl border border-slate-700 bg-[#0d1424] px-3 py-2.5 text-sm text-slate-100"
+            className="rounded-xl border border-yellow-500/30 bg-black px-3 py-2.5 text-sm text-gray-100"
           >
             <option value="">Shares Service</option>
             {shareOptions.map((service) => (
@@ -187,7 +190,7 @@ export function BundleManager({ apis, bundles, onAddBundle, onUpdateBundle, onDe
           <select
             value={saves}
             onChange={(event) => setSaves(event.target.value)}
-            className="rounded-xl border border-slate-700 bg-[#0d1424] px-3 py-2.5 text-sm text-slate-100"
+            className="rounded-xl border border-yellow-500/30 bg-black px-3 py-2.5 text-sm text-gray-100"
           >
             <option value="">Saves Service</option>
             {saveOptions.map((service) => (
@@ -198,7 +201,7 @@ export function BundleManager({ apis, bundles, onAddBundle, onUpdateBundle, onDe
           </select>
           <button
             type="submit"
-            className="md:col-span-2 rounded-lg border border-emerald-500/60 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200"
+            className="md:col-span-2 rounded-lg border border-yellow-500/50 bg-yellow-500/20 px-3 py-2 text-sm font-medium text-yellow-300 transition hover:bg-yellow-500/30"
           >
             {editingBundleId ? "Update Bundle" : "Save Bundle"}
           </button>
@@ -206,7 +209,7 @@ export function BundleManager({ apis, bundles, onAddBundle, onUpdateBundle, onDe
             <button
               type="button"
               onClick={resetForm}
-              className="md:col-span-2 rounded-lg border border-slate-600 px-3 py-2 text-sm text-slate-300"
+              className="md:col-span-2 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-300 transition hover:bg-gray-700"
             >
               Cancel Edit
             </button>
@@ -215,24 +218,30 @@ export function BundleManager({ apis, bundles, onAddBundle, onUpdateBundle, onDe
       )}
 
       <div className="space-y-3">
-        {bundles.length === 0 && <p className="text-sm text-slate-500">No bundles created yet.</p>}
+        {bundles.length === 0 && (
+          <div className="rounded-2xl border border-dashed border-yellow-500/30 bg-black p-8 text-center">
+            <span className="text-4xl">📁</span>
+            <p className="mt-2 text-sm text-gray-500">No bundles created yet</p>
+            <p className="mt-1 text-xs text-gray-600">Create your first arsenal bundle</p>
+          </div>
+        )}
         {bundles.map((bundle) => (
-          <article key={bundle.id} className="rounded-2xl border border-slate-800 bg-slate-900/30 p-4">
-            <h3 className="text-base font-semibold text-white">{bundle.name}</h3>
-            <p className="mt-2 text-sm text-slate-400">
-              Panel: <span className="text-slate-200">{apis.find((api) => api.id === bundle.apiId)?.name ?? "Unknown"}</span>
+          <article key={bundle.id} className="rounded-2xl border border-yellow-500/20 bg-gradient-to-br from-gray-900 to-black p-4">
+            <h3 className="text-base font-semibold text-yellow-400">{bundle.name}</h3>
+            <p className="mt-2 text-sm text-gray-500">
+              Panel: <span className="text-gray-300">{apis.find((api) => api.id === bundle.apiId)?.name ?? "Unknown"}</span>
             </p>
-            <p className="mt-2 text-sm text-slate-400">
-              Views Service: <span className="text-slate-200">{bundle.serviceIds.views}</span>
+            <p className="mt-2 text-sm text-gray-500">
+              Views Service: <span className="text-gray-300">{bundle.serviceIds.views}</span>
             </p>
-            <p className="text-sm text-slate-400">
-              Likes Service: <span className="text-slate-200">{bundle.serviceIds.likes}</span>
+            <p className="text-sm text-gray-500">
+              Likes Service: <span className="text-gray-300">{bundle.serviceIds.likes}</span>
             </p>
-            <p className="text-sm text-slate-400">
-              Shares Service: <span className="text-slate-200">{bundle.serviceIds.shares}</span>
+            <p className="text-sm text-gray-500">
+              Shares Service: <span className="text-gray-300">{bundle.serviceIds.shares}</span>
             </p>
-            <p className="text-sm text-slate-400">
-              Saves Service: <span className="text-slate-200">{bundle.serviceIds.saves}</span>
+            <p className="text-sm text-gray-500">
+              Saves Service: <span className="text-gray-300">{bundle.serviceIds.saves}</span>
             </p>
             <div className="mt-3 flex items-center gap-2">
               <button
@@ -247,7 +256,7 @@ export function BundleManager({ apis, bundles, onAddBundle, onUpdateBundle, onDe
                   setSaves(bundle.serviceIds.saves);
                   setShowForm(true);
                 }}
-                className="rounded-md border border-amber-500/50 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-200"
+                className="rounded-md border border-yellow-500/30 bg-yellow-500/10 px-2.5 py-1.5 text-xs text-yellow-300 transition hover:bg-yellow-500/20"
               >
                 ✏️ Edit
               </button>
@@ -261,7 +270,7 @@ export function BundleManager({ apis, bundles, onAddBundle, onUpdateBundle, onDe
                     resetForm();
                   }
                 }}
-                className="rounded-md border border-rose-500/50 bg-rose-500/10 px-2.5 py-1.5 text-xs text-rose-200"
+                className="rounded-md border border-red-500/30 bg-red-500/10 px-2.5 py-1.5 text-xs text-red-300 transition hover:bg-red-500/20"
               >
                 🗑 Delete
               </button>
