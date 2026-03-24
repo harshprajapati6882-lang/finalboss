@@ -55,10 +55,22 @@ export function OrderCard({ order, onControl, onClone, controlBusy }: OrderCardP
   }, [safeRuns, safeRunStatuses, order.status, order.completedRuns, nowMs]);
 
   const effectiveStatus = useMemo(() => {
-  if (completedRuns >= totalRuns) return "completed";
-  if (order.status === "processing") return "running";
-  return order.status;
-  }, [order.status, completedRuns, totalRuns]);
+    const runs = order.runs || [];
+    const now = Date.now();
+
+    if (runs.length > 0) {
+      const allCompleted = runs.every((run) => {
+        const runTime = new Date(run.at).getTime();
+        return runTime <= now;
+      });
+
+      if (allCompleted) return "completed";
+    }
+
+    if (order.status === "processing") return "running";
+
+    return order.status;
+  }, [order, nowMs]);
   const shortLink =
     order.link.length > 56 ? `${order.link.slice(0, 36)}...${order.link.slice(-14)}` : order.link;
 
