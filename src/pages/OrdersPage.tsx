@@ -57,6 +57,27 @@ export function OrdersPage({
     };
   }
 
+  function getRealStatus(order) {
+    const runs = order.runs || [];
+    const now = Date.now();
+
+    if (runs.length > 0) {
+      const allCompleted = runs.every((run) => {
+        const runTime = run?.at instanceof Date
+          ? run.at.getTime()
+          : new Date(run?.at ?? now).getTime();
+
+        return runTime <= now;
+      });
+
+      if (allCompleted) return "completed";
+    }
+
+    if (order.status === "processing") return "running";
+
+    return order.status;
+  }
+
   function toShortLink(link: string) {
     if (!link) return "-";
     return link.length > 48 ? `${link.slice(0, 30)}...${link.slice(-12)}` : link;
@@ -136,7 +157,7 @@ export function OrdersPage({
                     <td className="max-w-[260px] px-3 py-2 text-slate-400" title={order.link}>
                       {toShortLink(order.link)}
                     </td>
-                    <td className="px-3 py-2 uppercase text-slate-300">{order.status === "processing" ? "running" : order.status}</td>
+                    <td className="px-3 py-2 uppercase text-slate-300">{getRealStatus(order)}</td>
                     <td className="px-3 py-2">
                       <div className="w-28">
                         <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
@@ -173,7 +194,7 @@ export function OrdersPage({
                   {toShortLink(order.link)}
                 </p>
                 <div className="mt-3 flex items-center justify-between text-xs text-slate-400">
-                  <span className="uppercase text-slate-300">{order.status === "processing" ? "running" : order.status}</span>
+                  <span className="uppercase text-slate-300">{getRealStatus(order)}</span>
                   <span>
                     {progress.completed}/{progress.total}
                   </span>
