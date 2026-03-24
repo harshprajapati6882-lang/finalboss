@@ -11,12 +11,12 @@ import { cn } from "./utils/cn";
 
 type NavKey = "dashboard" | "new-order" | "orders" | "apis" | "bundles";
 
-const NAV_ITEMS: { key: NavKey; label: string }[] = [
-  { key: "dashboard", label: "Dashboard" },
-  { key: "new-order", label: "New Order" },
-  { key: "orders", label: "Orders" },
-  { key: "apis", label: "APIs" },
-  { key: "bundles", label: "Bundles" },
+const NAV_ITEMS: { key: NavKey; label: string; icon: string }[] = [
+  { key: "dashboard", label: "Dashboard", icon: "📊" },
+  { key: "new-order", label: "New Order", icon: "⚡" },
+  { key: "orders", label: "Orders", icon: "📦" },
+  { key: "apis", label: "APIs", icon: "🔗" },
+  { key: "bundles", label: "Bundles", icon: "📁" },
 ];
 
 function readStorage<T>(key: string, fallback: T): T {
@@ -206,7 +206,7 @@ export default function App() {
         />
       );
     }
-        if (activePage === "apis") {
+    if (activePage === "apis") {
       return (
         <APIsPage
           apis={apis}
@@ -327,13 +327,22 @@ export default function App() {
   }, [activePage, apis, bundles, orders, fetchingApiId, controllingOrderId, ordersNotice, cloneSourceOrder]);
 
   return (
-    <div className="min-h-screen bg-[#070b14] text-slate-100">
+    <div className="min-h-screen bg-black text-gray-100">
       <div className="flex min-h-screen">
-        <aside className="w-64 border-r border-slate-800/80 bg-[#050810] p-6">
+        {/* Batman Sidebar */}
+        <aside className="w-64 border-r border-yellow-500/20 bg-gradient-to-b from-gray-950 to-black p-6">
+          {/* Batman Logo */}
           <div className="mb-8 space-y-1">
-            <h1 className="text-xl font-semibold tracking-tight text-white">Dev SMM</h1>
-            <p className="text-xs text-slate-500">Internal orchestration tool</p>
+            <div className="flex items-center gap-3">
+              <span className="text-3xl">🦇</span>
+              <div>
+                <h1 className="text-xl font-bold tracking-tight text-yellow-400">GOTHAM</h1>
+                <p className="text-xs text-yellow-600">SMM Command Center</p>
+              </div>
+            </div>
           </div>
+
+          {/* Navigation */}
           <nav className="space-y-2">
             {NAV_ITEMS.map((item) => {
               const isActive = activePage === item.key;
@@ -348,24 +357,35 @@ export default function App() {
                     setActivePage(item.key);
                   }}
                   className={cn(
-                    "relative flex w-full items-center rounded-xl px-4 py-2.5 text-left text-sm transition-colors",
-                    isActive ? "bg-slate-800/80 text-white" : "text-slate-400 hover:bg-slate-900 hover:text-slate-100"
+                    "relative flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-sm font-medium transition-all",
+                    isActive 
+                      ? "bg-yellow-500/20 text-yellow-400 shadow-lg shadow-yellow-500/10" 
+                      : "text-gray-400 hover:bg-yellow-500/10 hover:text-yellow-300"
                   )}
                 >
                   {isActive && (
                     <motion.span
                       layoutId="active-nav"
-                      className="absolute inset-0 rounded-xl border border-slate-700/90"
+                      className="absolute inset-0 rounded-xl border border-yellow-500/50"
                       transition={{ type: "spring", stiffness: 280, damping: 28 }}
                     />
                   )}
+                  <span className="relative text-lg">{item.icon}</span>
                   <span className="relative">{item.label}</span>
                 </button>
               );
             })}
           </nav>
+
+          {/* Batman Quote */}
+          <div className="mt-8 rounded-xl border border-yellow-500/20 bg-yellow-500/5 p-4">
+            <p className="text-xs italic text-yellow-500/70">"It's not who I am underneath, but what I do that defines me."</p>
+            <p className="mt-2 text-right text-xs text-yellow-600">— Batman</p>
+          </div>
         </aside>
-        <main className="flex-1 overflow-y-auto">{content}</main>
+
+        {/* Main Content */}
+        <main className="flex-1 overflow-y-auto bg-gradient-to-br from-gray-950 via-black to-gray-950">{content}</main>
       </div>
     </div>
   );
