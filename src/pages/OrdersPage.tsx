@@ -24,6 +24,21 @@ export function OrdersPage({
   const [openedOrderId, setOpenedOrderId] = useState<string | null>(null);
 
   const filteredOrders = useMemo(() => {
+    const groupedOrders = useMemo(() => {
+      const scheduled = [];
+      const running = [];
+      const completed = [];
+
+      filteredOrders.forEach((order) => {
+        const status = getRealStatus(order);
+
+        if (status === "completed") completed.push(order);
+        else if (status === "running" || status === "processing") running.push(order);
+        else scheduled.push(order);
+      });
+
+      return { scheduled, running, completed };
+    }, [filteredOrders]);
     const value = query.trim().toLowerCase();
     if (!value) return orders;
     return orders.filter(
@@ -128,55 +143,100 @@ export function OrdersPage({
         </div>
       )}
       {filteredOrders.length === 0 && <p className="text-sm text-slate-500">No orders found.</p>}
-      {filteredOrders.length > 0 && viewMode === "rows" && (
-        <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/20">
-          <table className="w-full text-left text-xs text-slate-300">
-            <thead className="bg-[#0f1627] text-slate-400">
-              <tr>
-                <th className="px-3 py-2">Order</th>
-                <th className="px-3 py-2">Link</th>
-                <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2">Progress</th>
-                <th className="px-3 py-2">Runs</th>
-                <th className="px-3 py-2">Created</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredOrders.map((order) => {
-                const progress = getProgress(order);
-                return (
-                  <tr
-                    key={order.id}
-                    onClick={() => setOpenedOrderId(order.id)}
-                    className="cursor-pointer border-t border-slate-800/80 transition hover:bg-slate-800/40"
-                  >
-                    <td className="px-3 py-2">
-                      <p className="font-medium text-slate-100">{order.name || `Order #${order.id}`}</p>
-                      <p className="text-[11px] text-slate-500">{order.id}</p>
-                    </td>
-                    <td className="max-w-[260px] px-3 py-2 text-slate-400" title={order.link}>
-                      {toShortLink(order.link)}
-                    </td>
-                    <td className="px-3 py-2 uppercase text-slate-300">{getRealStatus(order)}</td>
-                    <td className="px-3 py-2">
-                      <div className="w-28">
-                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
-                          <div className="h-full rounded-full bg-cyan-400/80" style={{ width: `${progress.percent}%` }} />
-                        </div>
-                        <p className="mt-1 text-[11px] text-slate-500">{progress.percent}%</p>
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 text-slate-400">
-                      {progress.completed}/{progress.total}
-                    </td>
-                    <td className="px-3 py-2 text-slate-500">{new Date(order.createdAt).toLocaleString()}</td>
+      {viewMode === "rows" && (
+        <div className="space-y-6">
+
+          {/* Scheduled */}
+          {groupedOrders.scheduled.length > 0 && (
+            <div>
+              <h3 className="text-sm text-slate-400 mb-2">
+                Scheduled ({groupedOrders.scheduled.length})
+              </h3>
+              <table className="w-full text-left text-xs text-slate-300">
+               <tbody>
+                 {groupedOrders.scheduled.map((order) => {
+                   const progress = getProgress(order);
+                   return (
+                     <tr key={order.id}>
+                       <td>{order.name}</td>
+                     </tr>
+                   );
+                 })}
+               </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Running */}
+        {groupedOrders.running.length > 0 && (
+          <div>
+            <h3 className="text-sm text-cyan-300 mb-2">
+              Running ({groupedOrders.running.length})
+            </h3>
+
+            <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/20">
+              <table className="w-full text-left text-xs text-slate-300">
+                <thead className="bg-[#0f1627] text-slate-400">
+                  <tr>
+                    <th className="px-3 py-2">Order</th>
+                    <th className="px-3 py-2">Link</th>
+                    <th className="px-3 py-2">Status</th>
+                    <th className="px-3 py-2">Progress</th>
+                    <th className="px-3 py-2">Runs</th>
+                    <th className="px-3 py-2">Created</th>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+                </thead>
+                <tbody>
+                  {groupedOrders.running.map((order) => {
+                    const progress = getProgress(order);
+                    return (
+                      <tr key={order.id}>
+                        <td className="px-3 py-2">{order.name}</td>
+                        <td className="px-3 py-2">{order.link}</td>
+                        <td className="px-3 py-2">{getRealStatus(order)}</td>
+                        <td className="px-3 py-2">{progress.percent}%</td>
+                        <td className="px-3 py-2">{progress.completed}/{progress.total}</td>
+                        <td className="px-3 py-2">{new Date(order.createdAt).toLocaleString()}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Completed */}
+        {groupedOrders.completed.length > 0 && (
+          <div>
+            <h3 className="text-sm text-emerald-300 mb-2">
+              Completed ({groupedOrders.completed.length})
+            </h3>
+
+            <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/20 opacity-70">
+              <table className="w-full text-left text-xs text-slate-300">
+                <tbody>
+                  {groupedOrders.completed.map((order) => {
+                    const progress = getProgress(order);
+                    return (
+                      <tr key={order.id}>
+                        <td className="px-3 py-2">{order.name}</td>
+                        <td className="px-3 py-2">{order.link}</td>
+                        <td className="px-3 py-2">{getRealStatus(order)}</td>
+                        <td className="px-3 py-2">{progress.percent}%</td>
+                        <td className="px-3 py-2">{progress.completed}/{progress.total}</td>
+                        <td className="px-3 py-2">{new Date(order.createdAt).toLocaleString()}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+      </div>
+    )}
 
       {filteredOrders.length > 0 && viewMode === "columns" && (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
