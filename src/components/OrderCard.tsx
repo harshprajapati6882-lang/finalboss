@@ -53,9 +53,37 @@ export function OrderCard({ order, onControl, onClone, controlBusy }: OrderCardP
     const nextProgressPercent = Math.round((nextCompletedRuns / nextTotalRuns) * 100);
     return { totalRuns: nextTotalRuns, completedRuns: nextCompletedRuns, progressPercent: nextProgressPercent };
   }, [safeRuns, safeRunStatuses, order.status, order.completedRuns, nowMs]);
+
   const effectiveStatus = order.status === "processing" ? "running" : order.status;
   const shortLink =
     order.link.length > 56 ? `${order.link.slice(0, 36)}...${order.link.slice(-14)}` : order.link;
+
+  // 🔥 UPDATED CONTROL FUNCTION (REAL CANCEL)
+  const handleControl = async (action: "pause" | "resume" | "cancel") => {
+    try {
+      if (action === "cancel") {
+        const confirmCancel = window.confirm("Are you sure you want to cancel this order?");
+        if (!confirmCancel) return;
+
+        await fetch("https://backend-y30y.onrender.com/api/cancel", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            link: order.link,
+          }),
+        });
+      }
+
+      // keep existing behavior
+      onControl(order, action);
+
+    } catch (err) {
+      console.error("Control action failed", err);
+      alert("Action failed. Please try again.");
+    }
+  };
 
   return (
     <article className="rounded-2xl border border-slate-800 bg-slate-900/30 p-5">
@@ -73,7 +101,7 @@ export function OrderCard({ order, onControl, onClone, controlBusy }: OrderCardP
           <p className="text-sm text-slate-400">Service: <span className="font-semibold text-slate-100">{order.serviceId}</span></p>
           <p className="text-sm text-slate-400">Quantity: <span className="font-semibold text-slate-100">{order.totalViews}</span></p>
           <p className="text-sm text-slate-400">Status: <span className={`font-semibold ${statusColor[effectiveStatus]}`}>{effectiveStatus}</span></p>
-            {order.errorMessage && <p className="text-xs text-rose-300">Error: {order.errorMessage}</p>}
+          {order.errorMessage && <p className="text-xs text-rose-300">Error: {order.errorMessage}</p>}
           {finishTime && <p className="text-xs text-slate-500">Finish ETA: {finishTime.toLocaleString()}</p>}
           <p className="text-xs text-slate-500">Last Update: {new Date(order.lastUpdatedAt || order.createdAt).toLocaleString()}</p>
         </div>
@@ -96,7 +124,7 @@ export function OrderCard({ order, onControl, onClone, controlBusy }: OrderCardP
         <button
           type="button"
           disabled={controlBusy || effectiveStatus !== "running"}
-          onClick={() => onControl(order, "pause")}
+          onClick={() => handleControl("pause")}
           className="rounded-lg border border-amber-500/50 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-200 transition hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-50"
         >
           Pause
@@ -104,7 +132,7 @@ export function OrderCard({ order, onControl, onClone, controlBusy }: OrderCardP
         <button
           type="button"
           disabled={controlBusy || effectiveStatus !== "paused"}
-          onClick={() => onControl(order, "resume")}
+          onClick={() => handleControl("resume")}
           className="rounded-lg border border-emerald-500/50 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-200 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
         >
           Resume
@@ -112,7 +140,7 @@ export function OrderCard({ order, onControl, onClone, controlBusy }: OrderCardP
         <button
           type="button"
           disabled={controlBusy || effectiveStatus === "cancelled" || effectiveStatus === "completed"}
-          onClick={() => onControl(order, "cancel")}
+          onClick={() => handleControl("cancel")}
           className="rounded-lg border border-rose-500/50 bg-rose-500/10 px-3 py-1.5 text-xs text-rose-200 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-50"
         >
           Cancel
@@ -136,7 +164,7 @@ export function OrderCard({ order, onControl, onClone, controlBusy }: OrderCardP
       <AnimatePresence initial={false}>
         {expanded && (
           <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}>
-             <RunTable runs={safeRuns} runStatuses={safeRunStatuses} runErrors={safeRunErrors} mode="logs" />
+            <RunTable runs={safeRuns} runStatuses={safeRunStatuses} runErrors={safeRunErrors} mode="logs" />
           </motion.div>
         )}
       </AnimatePresence>
