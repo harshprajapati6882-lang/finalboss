@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { APIsPage } from "./pages/APIsPage";
 import { BundlesPage } from "./pages/BundlesPage";
@@ -18,6 +18,23 @@ const NAV_ITEMS: { key: NavKey; label: string; icon: string }[] = [
   { key: "apis", label: "APIs", icon: "🔗" },
   { key: "bundles", label: "Bundles", icon: "📁" },
 ];
+
+const BAT_QUOTES = [
+  "It's not who I am underneath, but what I do that defines me.",
+  "The night is darkest just before the dawn.",
+  "I'm whatever Gotham needs me to be.",
+  "Sometimes the truth isn't good enough.",
+  "A hero can be anyone.",
+  "Why do we fall? So we can learn to pick ourselves up.",
+  "I won't kill you, but I don't have to save you.",
+  "It's not about what I want. It's about what's fair.",
+  "Criminals are a superstitious, cowardly lot.",
+  "I am vengeance. I am the night. I am Batman.",
+];
+
+function getRandomQuote() {
+  return BAT_QUOTES[Math.floor(Math.random() * BAT_QUOTES.length)];
+}
 
 function readStorage<T>(key: string, fallback: T): T {
   try {
@@ -95,6 +112,95 @@ function hydrateBundles(bundles: Bundle[]): Bundle[] {
   }));
 }
 
+// Bat Signal Component
+function BatSignal() {
+  return (
+    <div className="relative h-44 w-full overflow-hidden rounded-xl border border-yellow-500/20 bg-gradient-to-b from-gray-900 via-gray-950 to-black">
+      {/* Stars */}
+      <div className="absolute inset-0">
+        {[...Array(20)].map((_, i) => (
+          <div
+            key={i}
+            className="absolute h-0.5 w-0.5 rounded-full bg-white/60"
+            style={{
+              top: `${Math.random() * 60}%`,
+              left: `${Math.random() * 100}%`,
+              animationDelay: `${Math.random() * 2}s`,
+            }}
+          />
+        ))}
+      </div>
+
+      {/* Clouds */}
+      <div className="absolute top-6 left-4 h-4 w-12 rounded-full bg-gray-700/30 blur-sm" />
+      <div className="absolute top-10 right-6 h-3 w-10 rounded-full bg-gray-700/20 blur-sm" />
+      <div className="absolute top-4 right-12 h-3 w-8 rounded-full bg-gray-600/20 blur-sm" />
+
+      {/* Bat Signal Light Beam */}
+      <div className="absolute bottom-0 left-1/2 -translate-x-1/2">
+        <div 
+          className="relative h-36 w-28 animate-pulse"
+          style={{ 
+            background: 'linear-gradient(to top, rgba(234, 179, 8, 0.4) 0%, rgba(234, 179, 8, 0.15) 40%, rgba(234, 179, 8, 0.05) 70%, transparent 100%)',
+            clipPath: 'polygon(35% 100%, 65% 100%, 85% 0%, 15% 0%)',
+          }}
+        />
+      </div>
+
+      {/* Bat Symbol Circle (Signal in Sky) */}
+      <div className="absolute top-3 left-1/2 -translate-x-1/2">
+        <div className="relative">
+          {/* Outer glow */}
+          <div className="absolute inset-0 animate-ping rounded-full bg-yellow-500/20" style={{ animationDuration: '3s' }} />
+          <div className="absolute -inset-2 animate-pulse rounded-full bg-yellow-500/10 blur-md" />
+          
+          {/* Signal circle */}
+          <div className="relative flex h-14 w-14 items-center justify-center rounded-full border-2 border-yellow-500/50 bg-yellow-500/20 shadow-lg shadow-yellow-500/30">
+            <span className="text-2xl" style={{ filter: 'drop-shadow(0 0 8px rgba(234, 179, 8, 0.8))' }}>🦇</span>
+          </div>
+        </div>
+      </div>
+
+      {/* City Silhouette */}
+      <div className="absolute bottom-0 left-0 right-0">
+        <svg viewBox="0 0 200 40" className="h-10 w-full fill-black">
+          {/* Buildings */}
+          <rect x="0" y="20" width="12" height="20" />
+          <rect x="14" y="12" width="10" height="28" />
+          <rect x="26" y="18" width="8" height="22" />
+          <rect x="36" y="8" width="14" height="32" />
+          <rect x="52" y="22" width="10" height="18" />
+          <rect x="64" y="14" width="12" height="26" />
+          <rect x="78" y="20" width="8" height="20" />
+          <rect x="88" y="6" width="16" height="34" />
+          <rect x="106" y="16" width="10" height="24" />
+          <rect x="118" y="24" width="8" height="16" />
+          <rect x="128" y="10" width="14" height="30" />
+          <rect x="144" y="18" width="10" height="22" />
+          <rect x="156" y="14" width="12" height="26" />
+          <rect x="170" y="22" width="8" height="18" />
+          <rect x="180" y="8" width="12" height="32" />
+          <rect x="194" y="16" width="6" height="24" />
+          
+          {/* Windows (small yellow dots) */}
+          <rect x="40" y="12" width="2" height="2" fill="#eab308" opacity="0.6" />
+          <rect x="44" y="18" width="2" height="2" fill="#eab308" opacity="0.4" />
+          <rect x="92" y="10" width="2" height="2" fill="#eab308" opacity="0.5" />
+          <rect x="96" y="16" width="2" height="2" fill="#eab308" opacity="0.7" />
+          <rect x="132" y="14" width="2" height="2" fill="#eab308" opacity="0.5" />
+          <rect x="136" y="22" width="2" height="2" fill="#eab308" opacity="0.4" />
+          <rect x="184" y="12" width="2" height="2" fill="#eab308" opacity="0.6" />
+        </svg>
+      </div>
+
+      {/* GOTHAM Text */}
+      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-center">
+        <p className="text-[10px] font-medium tracking-widest text-yellow-500/50">GOTHAM CITY</p>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [activePage, setActivePage] = useState<NavKey>("new-order");
   const [ordersNotice, setOrdersNotice] = useState("");
@@ -104,6 +210,20 @@ export default function App() {
   const [cloneSourceOrder, setCloneSourceOrder] = useState<CreatedOrder | null>(null);
   const [fetchingApiId, setFetchingApiId] = useState<string | null>(null);
   const [controllingOrderId, setControllingOrderId] = useState<string | null>(null);
+  const [quote, setQuote] = useState(getRandomQuote());
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  // Update time every second
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Change quote every 30 seconds
+  useEffect(() => {
+    const timer = setInterval(() => setQuote(getRandomQuote()), 30000);
+    return () => clearInterval(timer);
+  }, []);
 
   const persistOrders = useCallback((next: CreatedOrder[]) => {
     setOrders(next);
@@ -330,20 +450,42 @@ export default function App() {
     <div className="min-h-screen bg-black text-gray-100">
       <div className="flex min-h-screen">
         {/* Batman Sidebar */}
-        <aside className="w-64 border-r border-yellow-500/20 bg-gradient-to-b from-gray-950 to-black p-6">
-          {/* Batman Logo */}
-          <div className="mb-8 space-y-1">
+        <aside className="w-64 flex flex-col border-r border-yellow-500/20 bg-gradient-to-b from-gray-950 to-black p-5">
+          {/* Logo Section */}
+          <div className="mb-6">
             <div className="flex items-center gap-3">
-              <span className="text-3xl">🦇</span>
+              <div className="relative">
+                <div className="absolute inset-0 animate-ping rounded-full bg-yellow-500/20" style={{ animationDuration: '3s' }} />
+                <div className="relative flex h-12 w-12 items-center justify-center rounded-full border border-yellow-500/30 bg-black">
+                  <span className="text-2xl">🦇</span>
+                </div>
+              </div>
               <div>
                 <h1 className="text-xl font-bold tracking-tight text-yellow-400">GOTHAM</h1>
-                <p className="text-xs text-yellow-600">SMM Command Center</p>
+                <p className="text-[10px] text-yellow-600">SMM COMMAND CENTER</p>
               </div>
             </div>
           </div>
 
+          {/* Gotham Time */}
+          <div className="mb-5 rounded-lg border border-yellow-500/20 bg-black p-3 text-center">
+            <p className="text-[10px] text-gray-600 tracking-wider">GOTHAM TIME</p>
+            <p className="text-lg font-mono font-bold text-yellow-400">
+              {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+            </p>
+          </div>
+
+          {/* System Status */}
+          <div className="mb-5 flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500"></span>
+            </span>
+            <span className="text-xs text-emerald-400">Systems Online</span>
+          </div>
+
           {/* Navigation */}
-          <nav className="space-y-2">
+          <nav className="space-y-1.5 flex-1">
             {NAV_ITEMS.map((item) => {
               const isActive = activePage === item.key;
               return (
@@ -357,10 +499,10 @@ export default function App() {
                     setActivePage(item.key);
                   }}
                   className={cn(
-                    "relative flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-sm font-medium transition-all",
+                    "relative flex w-full items-center gap-3 rounded-xl px-4 py-2.5 text-left text-sm font-medium transition-all",
                     isActive 
                       ? "bg-yellow-500/20 text-yellow-400 shadow-lg shadow-yellow-500/10" 
-                      : "text-gray-400 hover:bg-yellow-500/10 hover:text-yellow-300"
+                      : "text-gray-500 hover:bg-yellow-500/10 hover:text-yellow-300"
                   )}
                 >
                   {isActive && (
@@ -370,7 +512,7 @@ export default function App() {
                       transition={{ type: "spring", stiffness: 280, damping: 28 }}
                     />
                   )}
-                  <span className="relative text-lg">{item.icon}</span>
+                  <span className="relative text-base">{item.icon}</span>
                   <span className="relative">{item.label}</span>
                 </button>
               );
@@ -378,9 +520,24 @@ export default function App() {
           </nav>
 
           {/* Batman Quote */}
-          <div className="mt-8 rounded-xl border border-yellow-500/20 bg-yellow-500/5 p-4">
-            <p className="text-xs italic text-yellow-500/70">"It's not who I am underneath, but what I do that defines me."</p>
-            <p className="mt-2 text-right text-xs text-yellow-600">— Batman</p>
+          <div className="mb-4 rounded-xl border border-yellow-500/20 bg-yellow-500/5 p-3">
+            <p className="text-[11px] italic leading-relaxed text-yellow-500/70">
+              "{quote}"
+            </p>
+            <p className="mt-2 text-right text-[10px] font-medium text-yellow-600">— Batman</p>
+          </div>
+
+          {/* Bat Signal in Sky */}
+          <BatSignal />
+
+          {/* Keyboard Shortcuts */}
+          <div className="mt-4 space-y-1 rounded-lg border border-gray-800 bg-black/50 p-3">
+            <p className="text-[10px] font-medium text-gray-600 mb-2">SHORTCUTS</p>
+            <div className="grid grid-cols-2 gap-1 text-[10px] text-gray-700">
+              <span>⌘D</span><span>Dashboard</span>
+              <span>⌘N</span><span>New Mission</span>
+              <span>⌘O</span><span>Orders</span>
+            </div>
           </div>
         </aside>
 
