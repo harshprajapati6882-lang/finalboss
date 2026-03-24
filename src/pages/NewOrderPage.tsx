@@ -511,14 +511,20 @@ export function NewOrderPage({ apis, bundles, orders, prefillOrder, onCreateOrde
               const activeLinks = new Set(
                 orders
                   .filter((order) => {
-                    const total = order.runs?.length || 0;
-                    const completed = order.completedRuns || 0;
+                    const now = Date.now();
 
-                    const isCompleted = total > 0 && completed >= total;
+                    const runs = order.runs || [];
 
-                    return !isCompleted && order.status !== "cancelled";
-               })
-               .map((order) => order.link.replace(/\/+$/, "").toLowerCase())
+                    if (!runs.length) return false;
+
+                    const allRunsCompleted = runs.every((run) => {
+                      const runTime = new Date(run.at).getTime();
+                      return runTime <= now;
+                    });
+
+                    return !allRunsCompleted && order.status !== "cancelled";
+                  })
+                  .map((order) => order.link.replace(/\/+$/, "").toLowerCase())
              );
               const createdLinks = new Set<string>();
               let successCount = 0;
