@@ -9,6 +9,7 @@ type TimePeriod = "today" | "week" | "month" | "all";
 
 export function DashboardPage({ orders }: DashboardPageProps) {
   const [period, setPeriod] = useState<TimePeriod>("all");
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   // Filter orders by time period
   const filteredOrders = useMemo(() => {
@@ -135,6 +136,12 @@ export function DashboardPage({ orders }: DashboardPageProps) {
       default:
         return "bg-slate-500/20";
     }
+  };
+
+  // Clear ONLY orders data (keeps APIs and Bundles)
+  const handleClearOrders = () => {
+    localStorage.removeItem("dev-smm-orders");
+    window.location.reload();
   };
 
   return (
@@ -401,6 +408,48 @@ export function DashboardPage({ orders }: DashboardPageProps) {
           <p className="mt-1 text-xl font-bold text-emerald-400">
             {filteredOrders.reduce((sum, o) => sum + (o.completedRuns || 0), 0)}
           </p>
+        </div>
+      </div>
+
+      {/* Clear Orders Button */}
+      <div className="rounded-xl border border-orange-500/30 bg-orange-500/5 p-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-sm font-medium text-orange-300">🧹 Clear Orders</h3>
+            <p className="mt-1 text-xs text-orange-400/70">
+              Delete all orders for a fresh start.
+              <br />
+              <span className="text-emerald-400">✓ APIs and Bundles will be kept safe!</span>
+            </p>
+          </div>
+
+          {!showClearConfirm ? (
+            <button
+              type="button"
+              onClick={() => setShowClearConfirm(true)}
+              className="rounded-lg border border-orange-500/50 bg-orange-500/10 px-4 py-2 text-sm font-medium text-orange-200 transition hover:bg-orange-500/20"
+            >
+              🗑️ Clear Orders
+            </button>
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-orange-300">Are you sure?</span>
+              <button
+                type="button"
+                onClick={handleClearOrders}
+                className="rounded-lg border border-red-500 bg-red-500/30 px-4 py-2 text-sm font-medium text-red-100 transition hover:bg-red-500/50"
+              >
+                ✓ Yes, Delete Orders
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowClearConfirm(false)}
+                className="rounded-lg border border-slate-600 bg-slate-800 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-700"
+              >
+                ✕ Cancel
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
