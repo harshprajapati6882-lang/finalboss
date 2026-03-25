@@ -134,7 +134,6 @@ function hydrateBundles(bundles: Bundle[]): Bundle[] {
 }
 
 export default function App() {
-  // 🦇 FIX: Load saved page from localStorage
   const [activePage, setActivePage] = useState<NavKey>(() => {
     const saved = localStorage.getItem("dev-smm-active-page");
     if (saved === "dashboard" || saved === "new-order" || saved === "orders" || saved === "apis" || saved === "bundles") {
@@ -151,18 +150,25 @@ export default function App() {
   const [fetchingApiId, setFetchingApiId] = useState<string | null>(null);
   const [controllingOrderId, setControllingOrderId] = useState<string | null>(null);
   
-  // 🦇 Random quote on each visit/refresh
   const [batmanQuote] = useState(() => getRandomQuote());
 
-  // 🦇 FIX: Helper function to change page and save to localStorage
   const navigateToPage = useCallback((page: NavKey) => {
     setActivePage(page);
     localStorage.setItem("dev-smm-active-page", page);
   }, []);
 
-  const persistOrders = useCallback((next: CreatedOrder[]) => {
-    setOrders(next);
-    localStorage.setItem("dev-smm-orders", JSON.stringify(next));
+  // 🔧 FIX: Updated to support functional updates for bulk orders
+  const persistOrders = useCallback((next: CreatedOrder[] | ((prev: CreatedOrder[]) => CreatedOrder[])) => {
+    if (typeof next === 'function') {
+      setOrders((prev) => {
+        const updated = next(prev);
+        localStorage.setItem("dev-smm-orders", JSON.stringify(updated));
+        return updated;
+      });
+    } else {
+      setOrders(next);
+      localStorage.setItem("dev-smm-orders", JSON.stringify(next));
+    }
   }, []);
 
   const persistApis = useCallback((next: ApiPanel[]) => {
@@ -183,7 +189,8 @@ export default function App() {
           bundles={bundles}
           orders={orders}
           prefillOrder={cloneSourceOrder}
-          onCreateOrder={(order) => persistOrders([order, ...orders])}
+          // 🔧 FIX: Use functional update to prevent bulk order loss
+          onCreateOrder={(order) => persistOrders((prev) => [order, ...prev])}
           onNavigateToOrders={(notice) => {
             if (notice) setOrdersNotice(notice);
             navigateToPage("orders");
@@ -206,26 +213,28 @@ export default function App() {
           }}
           onControlOrder={async (order, action) => {
             const applyLocalUpdate = (nextStatus: CreatedOrder["status"]) => {
-              const updated = orders.map((item) => {
-                if (item.id !== order.id) return item;
-                if (nextStatus === "cancelled") {
-                  const nextRunStatuses = item.runStatuses.map((status) => (status === "pending" ? "cancelled" : status));
-                  const completedRuns = nextRunStatuses.filter((status) => status === "completed").length;
+              // 🔧 FIX: Use functional update here too
+              persistOrders((prev) =>
+                prev.map((item) => {
+                  if (item.id !== order.id) return item;
+                  if (nextStatus === "cancelled") {
+                    const nextRunStatuses = item.runStatuses.map((status) => (status === "pending" ? "cancelled" : status));
+                    const completedRuns = nextRunStatuses.filter((status) => status === "completed").length;
+                    return {
+                      ...item,
+                      status: nextStatus,
+                      runStatuses: nextRunStatuses,
+                      completedRuns,
+                      lastUpdatedAt: new Date().toISOString(),
+                    };
+                  }
                   return {
                     ...item,
                     status: nextStatus,
-                    runStatuses: nextRunStatuses,
-                    completedRuns,
                     lastUpdatedAt: new Date().toISOString(),
                   };
-                }
-                return {
-                  ...item,
-                  status: nextStatus,
-                  lastUpdatedAt: new Date().toISOString(),
-                };
-              });
-              persistOrders(updated);
+                })
+              );
             };
 
             setControllingOrderId(order.id);
@@ -237,17 +246,19 @@ export default function App() {
                 });
                 const nextStatus =
                   result.status || (action === "pause" ? "paused" : action === "resume" ? "running" : "cancelled");
-                const updated = orders.map((item) => {
-                  if (item.id !== order.id) return item;
-                  return {
-                    ...item,
-                    status: nextStatus,
-                    completedRuns: typeof result.completedRuns === "number" ? result.completedRuns : item.completedRuns,
-                    runStatuses: result.runStatuses ?? item.runStatuses,
-                    lastUpdatedAt: new Date().toISOString(),
-                  };
-                });
-                persistOrders(updated);
+                // 🔧 FIX: Use functional update
+                persistOrders((prev) =>
+                  prev.map((item) => {
+                    if (item.id !== order.id) return item;
+                    return {
+                      ...item,
+                      status: nextStatus,
+                      completedRuns: typeof result.completedRuns === "number" ? result.completedRuns : item.completedRuns,
+                      runStatuses: result.runStatuses ?? item.runStatuses,
+                      lastUpdatedAt: new Date().toISOString(),
+                    };
+                  })
+                );
               } else {
                 applyLocalUpdate(action === "pause" ? "paused" : action === "resume" ? "running" : "cancelled");
               }
