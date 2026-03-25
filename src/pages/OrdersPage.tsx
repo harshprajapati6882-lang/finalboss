@@ -12,7 +12,8 @@ interface OrdersPageProps {
   onDismissNotice: () => void;
 }
 
-type TabType = "running" | "completed" | "scheduled";
+// 🔧 UPDATED: Added "cancelled" and "failed" tabs
+type TabType = "running" | "completed" | "scheduled" | "cancelled";
 type ViewMode = "rows" | "columns";
 
 // Grouped order type for batch orders
@@ -39,10 +40,12 @@ const STATUS_COLORS: Record<string, { bg: string; text: string; dot: string }> =
   failed: { bg: "bg-red-500/15", text: "text-red-300", dot: "bg-red-400" },
 };
 
+// 🔧 UPDATED: Added cancelled tab
 const TABS: { key: TabType; label: string; icon: string }[] = [
   { key: "running", label: "Active", icon: "⚡" },
-  { key: "completed", label: "Completed", icon: "✓" },
   { key: "scheduled", label: "Scheduled", icon: "⏱" },
+  { key: "completed", label: "Completed", icon: "✓" },
+  { key: "cancelled", label: "Cancelled", icon: "❌" },
 ];
 
 export function OrdersPage({
@@ -84,7 +87,6 @@ export function OrdersPage({
     const totalRuns = allRuns.length;
     if (totalRuns === 0) return { percent: 0, completed: 0, total: 0 };
     
-    const now = Date.now();
     let completedCount = 0;
     
     group.orders.forEach(order => {
@@ -102,6 +104,10 @@ export function OrdersPage({
   }
 
   function getRealStatus(order: CreatedOrder): string {
+    // 🔧 Check cancelled/failed first
+    if (order.status === "cancelled") return "cancelled";
+    if (order.status === "failed") return "failed";
+    
     const runs = order.runs || [];
     const now = Date.now();
 
@@ -110,7 +116,7 @@ export function OrdersPage({
         const runTime = run?.at instanceof Date ? run.at.getTime() : new Date(run?.at ?? now).getTime();
         return runTime > now;
       });
-      if (allFuture && order.status !== "cancelled" && order.status !== "paused") {
+      if (allFuture && order.status !== "paused") {
         return "scheduled";
       }
     }
@@ -132,9 +138,12 @@ export function OrdersPage({
   function getGroupStatus(group: GroupedOrder): string {
     const statuses = group.orders.map(o => getRealStatus(o));
     
+    // If ALL are cancelled or failed, show as cancelled
+    if (statuses.every(s => s === "cancelled" || s === "failed")) return "cancelled";
     if (statuses.every(s => s === "completed")) return "completed";
-    if (statuses.every(s => s === "cancelled")) return "cancelled";
     if (statuses.every(s => s === "scheduled")) return "scheduled";
+    
+    // Mixed statuses
     if (statuses.some(s => s === "failed")) return "failed";
     if (statuses.some(s => s === "paused")) return "paused";
     if (statuses.some(s => s === "running")) return "running";
@@ -142,18 +151,11 @@ export function OrdersPage({
     return "running";
   }
 
-  function getOrderCategory(order: CreatedOrder): TabType {
-    const status = getRealStatus(order);
-    
-    if (status === "completed") return "completed";
-    if (status === "scheduled") return "scheduled";
-    
-    return "running";
-  }
-
+  // 🔧 UPDATED: Added cancelled category
   function getGroupCategory(group: GroupedOrder): TabType {
     const status = getGroupStatus(group);
     
+    if (status === "cancelled" || status === "failed") return "cancelled";
     if (status === "completed") return "completed";
     if (status === "scheduled") return "scheduled";
     
@@ -193,7 +195,7 @@ export function OrdersPage({
     const groups: Map<string, GroupedOrder> = new Map();
     
     orders.forEach((order) => {
-      const groupKey = order.batchId || order.id; // Use batchId or individual id
+      const groupKey = order.batchId || order.id;
       
       if (groups.has(groupKey)) {
         const existing = groups.get(groupKey)!;
@@ -222,23 +224,28 @@ export function OrdersPage({
     return Array.from(groups.values());
   }, [orders]);
 
+  // 🔧 UPDATED: Added cancelled category
   const categorizedGroups = useMemo(() => {
     const running: GroupedOrder[] = [];
     const completed: GroupedOrder[] = [];
     const scheduled: GroupedOrder[] = [];
+    const cancelled: GroupedOrder[] = [];
 
     groupedOrders.forEach((group) => {
       const category = getGroupCategory(group);
       if (category === "running") running.push(group);
       else if (category === "completed") completed.push(group);
-      else scheduled.push(group);
+      else if (category === "scheduled") scheduled.push(group);
+      else if (category === "cancelled") cancelled.push(group);
     });
 
+    // Sort each category
     running.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     completed.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     scheduled.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    cancelled.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-    return { running, completed, scheduled };
+    return { running, completed, scheduled, cancelled };
   }, [groupedOrders]);
 
   const filteredGroups = useMemo(() => {
@@ -306,17 +313,20 @@ export function OrdersPage({
     );
   }
 
+  // 🔧 UPDATED: Added cancelled empty state
   function EmptyState({ tab }: { tab: TabType }) {
     const messages = {
       running: { title: "No active missions", description: "Missions in progress will appear here" },
       completed: { title: "No completed missions", description: "Finished missions will appear here" },
       scheduled: { title: "No scheduled missions", description: "Future missions will appear here" },
+      cancelled: { title: "No cancelled missions", description: "Cancelled & failed missions will appear here" },
     };
 
     const icons = {
       running: "⚡",
       completed: "✅",
       scheduled: "📅",
+      cancelled: "🗑️",
     };
 
     return (
@@ -328,21 +338,26 @@ export function OrdersPage({
     );
   }
 
+  // 🔧 UPDATED: Added cancelled to stats
   function StatsSummary() {
     const stats = [
-      { label: "Active", count: categorizedGroups.running.length, color: "text-yellow-400" },
-      { label: "Completed", count: categorizedGroups.completed.length, color: "text-emerald-400" },
-      { label: "Scheduled", count: categorizedGroups.scheduled.length, color: "text-amber-400" },
+      { label: "Active", count: categorizedGroups.running.length, color: "text-yellow-400", icon: "⚡" },
+      { label: "Scheduled", count: categorizedGroups.scheduled.length, color: "text-amber-400", icon: "⏱" },
+      { label: "Completed", count: categorizedGroups.completed.length, color: "text-emerald-400", icon: "✅" },
+      { label: "Cancelled", count: categorizedGroups.cancelled.length, color: "text-red-400", icon: "❌" },
     ];
 
     return (
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-4 gap-3">
         {stats.map((stat) => (
           <div
             key={stat.label}
             className="rounded-lg border border-yellow-500/20 bg-black px-4 py-3 text-center"
           >
-            <p className={`text-2xl font-bold ${stat.color}`}>{stat.count}</p>
+            <div className="flex items-center justify-center gap-1">
+              <span className="text-sm">{stat.icon}</span>
+              <p className={`text-2xl font-bold ${stat.color}`}>{stat.count}</p>
+            </div>
             <p className="mt-1 text-xs text-gray-600">{stat.label}</p>
           </div>
         ))}
@@ -406,17 +421,22 @@ export function OrdersPage({
   function GroupCardItem({ group }: { group: GroupedOrder }) {
     const progress = getGroupProgress(group);
     const status = getGroupStatus(group);
+    const isCancelled = status === "cancelled" || status === "failed";
 
     return (
       <button
         type="button"
         onClick={() => setOpenedGroupId(group.id)}
-        className="group rounded-xl border border-yellow-500/20 bg-gradient-to-br from-gray-900 to-black p-4 text-left transition-all hover:border-yellow-500/40 hover:shadow-lg hover:shadow-yellow-500/5 w-full"
+        className={`group rounded-xl border bg-gradient-to-br from-gray-900 to-black p-4 text-left transition-all hover:shadow-lg w-full ${
+          isCancelled 
+            ? "border-red-500/20 hover:border-red-500/40 hover:shadow-red-500/5" 
+            : "border-yellow-500/20 hover:border-yellow-500/40 hover:shadow-yellow-500/5"
+        }`}
       >
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <p className="truncate text-sm font-semibold text-white group-hover:text-yellow-100">
+              <p className={`truncate text-sm font-semibold ${isCancelled ? 'text-red-200' : 'text-white'} group-hover:text-yellow-100`}>
                 {group.name || `Mission #${group.id.slice(0, 8)}`}
               </p>
               {group.isBatch && (
@@ -440,8 +460,12 @@ export function OrdersPage({
 
         {group.isBatch && (
           <div className="mt-3 flex flex-wrap gap-1">
-            {group.orders.slice(0, 3).map((order, idx) => (
-              <span key={order.id} className="rounded bg-gray-800 px-1.5 py-0.5 text-[9px] text-gray-400">
+            {group.orders.slice(0, 3).map((order) => (
+              <span key={order.id} className={`rounded px-1.5 py-0.5 text-[9px] ${
+                getRealStatus(order) === 'cancelled' || getRealStatus(order) === 'failed'
+                  ? 'bg-red-900/50 text-red-400'
+                  : 'bg-gray-800 text-gray-400'
+              }`}>
                 {extractReelId(order.link)}
               </span>
             ))}
@@ -464,7 +488,7 @@ export function OrdersPage({
         </div>
 
         <div className="mt-3 flex items-center justify-between text-[11px] text-gray-600">
-          <span>Deployed</span>
+          <span>{isCancelled ? 'Cancelled' : 'Deployed'}</span>
           <span>{new Date(group.createdAt).toLocaleDateString()}</span>
         </div>
       </button>
@@ -476,26 +500,35 @@ export function OrdersPage({
     const progress = getProgress(order);
     const status = getRealStatus(order);
     const isControlling = controllingOrderId === order.id;
+    const isCancelled = status === "cancelled" || status === "failed";
 
     return (
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: index * 0.05 }}
-        className="rounded-xl border border-gray-800 bg-gradient-to-br from-gray-900 to-black p-4"
+        className={`rounded-xl border bg-gradient-to-br from-gray-900 to-black p-4 ${
+          isCancelled ? 'border-red-500/30' : 'border-gray-800'
+        }`}
       >
         {/* Header */}
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <span className="flex items-center justify-center h-6 w-6 rounded-full bg-yellow-500/20 text-xs font-bold text-yellow-400">
+              <span className={`flex items-center justify-center h-6 w-6 rounded-full text-xs font-bold ${
+                isCancelled 
+                  ? 'bg-red-500/20 text-red-400' 
+                  : 'bg-yellow-500/20 text-yellow-400'
+              }`}>
                 {index + 1}
               </span>
               <a
                 href={order.link}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="truncate text-sm text-blue-400 hover:text-blue-300 hover:underline"
+                className={`truncate text-sm hover:underline ${
+                  isCancelled ? 'text-red-400 hover:text-red-300' : 'text-blue-400 hover:text-blue-300'
+                }`}
                 onClick={(e) => e.stopPropagation()}
               >
                 {toShortLink(order.link)}
@@ -505,6 +538,13 @@ export function OrdersPage({
           </div>
           <StatusBadge status={status} />
         </div>
+
+        {/* Error Message (if failed/cancelled) */}
+        {order.errorMessage && (
+          <div className="mt-2 ml-8 rounded-md bg-red-500/10 border border-red-500/20 px-2 py-1">
+            <p className="text-[10px] text-red-400">❌ {order.errorMessage}</p>
+          </div>
+        )}
 
         {/* Progress */}
         <div className="mt-3 ml-8">
@@ -539,8 +579,8 @@ export function OrdersPage({
 
         {/* Individual Controls */}
         <div className="mt-3 ml-8 flex items-center gap-2 flex-wrap">
-          {/* Pause/Resume */}
-          {status === "running" && (
+          {/* Pause/Resume - Only show if not cancelled */}
+          {!isCancelled && status === "running" && (
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -553,7 +593,7 @@ export function OrdersPage({
             </button>
           )}
           
-          {status === "paused" && (
+          {!isCancelled && status === "paused" && (
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -566,8 +606,8 @@ export function OrdersPage({
             </button>
           )}
 
-          {/* Cancel */}
-          {status !== "completed" && status !== "cancelled" && (
+          {/* Cancel - Only show if not already cancelled/completed */}
+          {!isCancelled && status !== "completed" && (
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -582,7 +622,7 @@ export function OrdersPage({
             </button>
           )}
 
-          {/* Clone */}
+          {/* Clone - Always available */}
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -604,13 +644,6 @@ export function OrdersPage({
             🔗 Open
           </a>
         </div>
-
-        {/* Error Message */}
-        {order.errorMessage && (
-          <div className="mt-2 ml-8 rounded-md bg-red-500/10 border border-red-500/20 px-2 py-1">
-            <p className="text-[10px] text-red-400">❌ {order.errorMessage}</p>
-          </div>
-        )}
       </motion.div>
     );
   }
@@ -619,6 +652,7 @@ export function OrdersPage({
   function BatchDetailPopup({ group }: { group: GroupedOrder }) {
     const overallProgress = getGroupProgress(group);
     const overallStatus = getGroupStatus(group);
+    const isCancelled = overallStatus === "cancelled" || overallStatus === "failed";
 
     const statusCounts = useMemo(() => {
       const counts: Record<string, number> = {};
@@ -637,7 +671,9 @@ export function OrdersPage({
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="max-h-[92vh] w-full max-w-4xl overflow-hidden rounded-2xl border border-yellow-500/30 bg-black shadow-2xl flex flex-col"
+          className={`max-h-[92vh] w-full max-w-4xl overflow-hidden rounded-2xl border bg-black shadow-2xl flex flex-col ${
+            isCancelled ? 'border-red-500/30' : 'border-yellow-500/30'
+          }`}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
@@ -645,10 +681,17 @@ export function OrdersPage({
             <div className="flex items-center justify-between">
               <div>
                 <div className="flex items-center gap-2">
-                  <h3 className="text-lg font-semibold text-yellow-400">{group.name}</h3>
+                  <h3 className={`text-lg font-semibold ${isCancelled ? 'text-red-400' : 'text-yellow-400'}`}>
+                    {group.name}
+                  </h3>
                   {group.isBatch && (
                     <span className="rounded-full bg-blue-500/20 border border-blue-500/30 px-2 py-0.5 text-xs text-blue-300">
                       📦 Bulk Order
+                    </span>
+                  )}
+                  {isCancelled && (
+                    <span className="rounded-full bg-red-500/20 border border-red-500/30 px-2 py-0.5 text-xs text-red-300">
+                      ❌ Cancelled
                     </span>
                   )}
                 </div>
@@ -674,7 +717,9 @@ export function OrdersPage({
                 <p className="text-[10px] text-gray-500">Total Views</p>
               </div>
               <div className="rounded-lg bg-gray-900 px-3 py-2 text-center">
-                <p className="text-xl font-bold text-emerald-400">{overallProgress.percent}%</p>
+                <p className={`text-xl font-bold ${isCancelled ? 'text-red-400' : 'text-emerald-400'}`}>
+                  {overallProgress.percent}%
+                </p>
                 <p className="text-[10px] text-gray-500">Progress</p>
               </div>
               <div className="rounded-lg bg-gray-900 px-3 py-2 text-center">
@@ -692,53 +737,57 @@ export function OrdersPage({
               ))}
             </div>
 
-            {/* Bulk Actions */}
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button
-                onClick={() => {
-                  if (window.confirm(`Pause ALL ${group.orders.filter(o => getRealStatus(o) === 'running').length} running orders?`)) {
-                    group.orders.forEach((order) => {
-                      if (getRealStatus(order) === 'running') {
-                        onControlOrder(order, 'pause');
-                      }
-                    });
-                  }
-                }}
-                className="flex items-center gap-1 rounded-lg border border-orange-500/30 bg-orange-500/10 px-3 py-1.5 text-xs font-medium text-orange-300 hover:bg-orange-500/20 transition"
-              >
-                ⏸️ Pause All Running
-              </button>
-              <button
-                onClick={() => {
-                  if (window.confirm(`Resume ALL ${group.orders.filter(o => getRealStatus(o) === 'paused').length} paused orders?`)) {
-                    group.orders.forEach((order) => {
-                      if (getRealStatus(order) === 'paused') {
-                        onControlOrder(order, 'resume');
-                      }
-                    });
-                  }
-                }}
-                className="flex items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-300 hover:bg-emerald-500/20 transition"
-              >
-                ▶️ Resume All Paused
-              </button>
-              <button
-                onClick={() => {
-                  const activeCount = group.orders.filter(o => !['completed', 'cancelled'].includes(getRealStatus(o))).length;
-                  if (window.confirm(`⚠️ Cancel ALL ${activeCount} active orders?\n\nThis cannot be undone!`)) {
-                    group.orders.forEach((order) => {
-                      const status = getRealStatus(order);
-                      if (status !== 'completed' && status !== 'cancelled') {
-                        onControlOrder(order, 'cancel');
-                      }
-                    });
-                  }
-                }}
-                className="flex items-center gap-1 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-300 hover:bg-red-500/20 transition"
-              >
-                ❌ Cancel All Active
-              </button>
-            </div>
+            {/* Bulk Actions - Only show if not all cancelled */}
+            {!isCancelled && (
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  onClick={() => {
+                    const runningCount = group.orders.filter(o => getRealStatus(o) === 'running').length;
+                    if (runningCount > 0 && window.confirm(`Pause ALL ${runningCount} running orders?`)) {
+                      group.orders.forEach((order) => {
+                        if (getRealStatus(order) === 'running') {
+                          onControlOrder(order, 'pause');
+                        }
+                      });
+                    }
+                  }}
+                  className="flex items-center gap-1 rounded-lg border border-orange-500/30 bg-orange-500/10 px-3 py-1.5 text-xs font-medium text-orange-300 hover:bg-orange-500/20 transition"
+                >
+                  ⏸️ Pause All Running
+                </button>
+                <button
+                  onClick={() => {
+                    const pausedCount = group.orders.filter(o => getRealStatus(o) === 'paused').length;
+                    if (pausedCount > 0 && window.confirm(`Resume ALL ${pausedCount} paused orders?`)) {
+                      group.orders.forEach((order) => {
+                        if (getRealStatus(order) === 'paused') {
+                          onControlOrder(order, 'resume');
+                        }
+                      });
+                    }
+                  }}
+                  className="flex items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-300 hover:bg-emerald-500/20 transition"
+                >
+                  ▶️ Resume All Paused
+                </button>
+                <button
+                  onClick={() => {
+                    const activeCount = group.orders.filter(o => !['completed', 'cancelled', 'failed'].includes(getRealStatus(o))).length;
+                    if (activeCount > 0 && window.confirm(`⚠️ Cancel ALL ${activeCount} active orders?\n\nThis cannot be undone!`)) {
+                      group.orders.forEach((order) => {
+                        const status = getRealStatus(order);
+                        if (status !== 'completed' && status !== 'cancelled' && status !== 'failed') {
+                          onControlOrder(order, 'cancel');
+                        }
+                      });
+                    }
+                  }}
+                  className="flex items-center gap-1 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-300 hover:bg-red-500/20 transition"
+                >
+                  ❌ Cancel All Active
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Individual Links List */}
@@ -840,6 +889,7 @@ export function OrdersPage({
             {TABS.map((tab) => {
               const count = categorizedGroups[tab.key].length;
               const isActive = activeTab === tab.key;
+              const isCancelledTab = tab.key === "cancelled";
               return (
                 <button
                   key={tab.key}
@@ -847,7 +897,9 @@ export function OrdersPage({
                   onClick={() => setActiveTab(tab.key)}
                   className={`inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-all ${
                     isActive
-                      ? "bg-yellow-500/20 text-yellow-300 shadow-lg shadow-yellow-500/10"
+                      ? isCancelledTab
+                        ? "bg-red-500/20 text-red-300 shadow-lg shadow-red-500/10"
+                        : "bg-yellow-500/20 text-yellow-300 shadow-lg shadow-yellow-500/10"
                       : "text-gray-500 hover:bg-yellow-500/10 hover:text-yellow-400"
                   }`}
                 >
@@ -855,7 +907,11 @@ export function OrdersPage({
                   <span>{tab.label}</span>
                   <span
                     className={`ml-1 rounded-full px-2 py-0.5 text-xs ${
-                      isActive ? "bg-yellow-500/30 text-yellow-100" : "bg-gray-800 text-gray-500"
+                      isActive 
+                        ? isCancelledTab 
+                          ? "bg-red-500/30 text-red-100"
+                          : "bg-yellow-500/30 text-yellow-100" 
+                        : "bg-gray-800 text-gray-500"
                     }`}
                   >
                     {count}
@@ -937,7 +993,7 @@ export function OrdersPage({
                   <th className="px-4 py-3 font-medium">Link(s)</th>
                   <th className="px-4 py-3 font-medium">Status</th>
                   <th className="px-4 py-3 font-medium">Progress</th>
-                  <th className="px-4 py-3 font-medium">Deployed</th>
+                  <th className="px-4 py-3 font-medium">{activeTab === "cancelled" ? "Cancelled" : "Deployed"}</th>
                 </tr>
               </thead>
               <tbody>
