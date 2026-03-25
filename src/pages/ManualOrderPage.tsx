@@ -13,7 +13,7 @@ interface ManualOrderPageProps {
 
 interface RunEntry {
   id: string;
-  time: Date;
+  intervalMinutes: number; // Minutes from start (0, 60, 120, etc.)
   views: number;
   likes: number;
   shares: number;
@@ -38,14 +38,16 @@ export function ManualOrderPage({
   // Basic Order Info
   const [orderName, setOrderName] = useState("");
   const [postUrl, setPostUrl] = useState("");
+  const [bulkLinks, setBulkLinks] = useState("");
   const [selectedApiId, setSelectedApiId] = useState("");
   const [selectedBundleId, setSelectedBundleId] = useState("");
+  const [startDelayMinutes, setStartDelayMinutes] = useState(0);
   
   // Manual Runs Data
   const [runs, setRuns] = useState<RunEntry[]>([
     {
       id: generateId(),
-      time: new Date(),
+      intervalMinutes: 0,
       views: 1000,
       likes: 50,
       shares: 20,
@@ -60,6 +62,7 @@ export function ManualOrderPage({
   const [createSuccess, setCreateSuccess] = useState("");
   const [isCreatingOrder, setIsCreatingOrder] = useState(false);
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
+  const [deploymentProgress, setDeploymentProgress] = useState({ current: 0, total: 0 });
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -68,6 +71,16 @@ export function ManualOrderPage({
     if (!selectedApiId) return bundles;
     return bundles.filter((bundle) => bundle.apiId === selectedApiId);
   }, [bundles, selectedApiId]);
+
+  // Calculate actual times based on intervals
+  const calculatedRuns = useMemo(() => {
+    const startTime = Date.now() + startDelayMinutes * 60000;
+    
+    return runs.map((run) => ({
+      ...run,
+      actualTime: new Date(startTime + run.intervalMinutes * 60000),
+    }));
+  }, [runs, startDelayMinutes]);
 
   // Calculate Totals
   const totals = useMemo(() => {
@@ -87,9 +100,10 @@ export function ManualOrderPage({
     if (runs.length === 0) return "Safe";
     
     const avgViews = totals.views / runs.length;
-    const totalHours = runs.length > 1 
-      ? (new Date(runs[runs.length - 1].time).getTime() - new Date(runs[0].time).getTime()) / 3600000
+    const totalMinutes = runs.length > 1 
+      ? runs[runs.length - 1].intervalMinutes - runs[0].intervalMinutes
       : 0;
+    const totalHours = totalMinutes / 60;
     const viewsPerHour = totalHours > 0 ? totals.views / totalHours : totals.views;
     
     if (viewsPerHour > 10000 || avgViews > 5000) return "High";
@@ -100,21 +114,52 @@ export function ManualOrderPage({
   // Estimated Duration
   const estimatedDuration = useMemo(() => {
     if (runs.length <= 1) return 0;
-    const first = new Date(runs[0].time).getTime();
-    const last = new Date(runs[runs.length - 1].time).getTime();
-    return Math.round((last - first) / 3600000);
+    const totalMinutes = runs[runs.length - 1].intervalMinutes - runs[0].intervalMinutes;
+    return Math.round(totalMinutes / 60);
   }, [runs]);
+
+  // Parse bulk links
+  const parsedBulkLinks = useMemo(() => {
+    const lines = bulkLinks
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    
+    const validLinks = lines.filter((link) => {
+      try {
+        const parsed = new URL(link);
+        return parsed.protocol === "http:" || parsed.protocol === "https:";
+      } catch {
+        return false;
+      }
+    });
+    const invalidLinks = lines.filter((link) => {
+      try {
+        const parsed = new URL(link);
+        return !(parsed.protocol === "http:" || parsed.protocol === "https:");
+      } catch {
+        return true;
+      }
+    });
+    
+    return {
+      total: lines.length,
+      valid: validLinks.length,
+      invalid: invalidLinks.length,
+      links: validLinks,
+    };
+  }, [bulkLinks]);
 
   // Add new run
   const addRun = useCallback(() => {
     const lastRun = runs[runs.length - 1];
-    const newTime = new Date(lastRun ? new Date(lastRun.time).getTime() + 3600000 : Date.now());
+    const newInterval = lastRun ? lastRun.intervalMinutes + 60 : 0; // Default +60 min
     
     setRuns((prev) => [
       ...prev,
       {
         id: generateId(),
-        time: newTime,
+        intervalMinutes: newInterval,
         views: lastRun?.views || 1000,
         likes: lastRun?.likes || 50,
         shares: lastRun?.shares || 20,
@@ -146,7 +191,7 @@ export function ManualOrderPage({
     const newRun: RunEntry = {
       ...runToDuplicate,
       id: generateId(),
-      time: new Date(new Date(runToDuplicate.time).getTime() + 3600000),
+      intervalMinutes: runToDuplicate.intervalMinutes + 60,
     };
     
     const newRuns = [...runs];
@@ -159,7 +204,7 @@ export function ManualOrderPage({
     if (window.confirm("Clear all runs? This cannot be undone.")) {
       setRuns([{
         id: generateId(),
-        time: new Date(),
+        intervalMinutes: 0,
         views: 1000,
         likes: 50,
         shares: 20,
@@ -181,7 +226,7 @@ export function ManualOrderPage({
       
       // Check if first line is header
       const firstLine = lines[0].toLowerCase();
-      const hasHeader = firstLine.includes('time') || firstLine.includes('views') || firstLine.includes('date');
+      const hasHeader = firstLine.includes('interval') || firstLine.includes('views') || firstLine.includes('minute');
       const dataLines = hasHeader ? lines.slice(1) : lines;
 
       for (let i = 0; i < dataLines.length; i++) {
@@ -193,44 +238,8 @@ export function ManualOrderPage({
         
         if (parts.length < 2) continue;
 
-        // Try to parse time (first column)
-        let time: Date;
-        const timeStr = parts[0];
-        
-        // Try different date formats
-        if (timeStr.match(/^\d{1,2}:\d{2}/)) {
-          // Time only (HH:mm) - use today's date
-          const [hours, minutes] = timeStr.split(':').map(Number);
-          time = new Date();
-          time.setHours(hours, minutes, 0, 0);
-          // If this time is before the last run, add a day
-          if (parsedRuns.length > 0) {
-            const lastTime = parsedRuns[parsedRuns.length - 1].time;
-            if (time <= lastTime) {
-              time.setDate(time.getDate() + 1);
-            }
-          }
-        } else if (timeStr.match(/^\d+$/)) {
-          // Unix timestamp or minutes offset
-          const num = parseInt(timeStr);
-          if (num > 1000000000) {
-            // Unix timestamp
-            time = new Date(num * 1000);
-          } else {
-            // Minutes from start
-            const baseTime = parsedRuns.length > 0 
-              ? new Date(parsedRuns[0].time) 
-              : new Date();
-            time = new Date(baseTime.getTime() + num * 60000);
-          }
-        } else {
-          // Try standard date parsing
-          time = new Date(timeStr);
-          if (isNaN(time.getTime())) {
-            // Default: add i hours from now
-            time = new Date(Date.now() + i * 3600000);
-          }
-        }
+        // Parse interval (first column) - in minutes
+        const intervalMinutes = parseInt(parts[0]) || (i * 60); // Default: i * 60 minutes
 
         // Parse values
         const views = parseInt(parts[1]) || 0;
@@ -240,7 +249,7 @@ export function ManualOrderPage({
 
         parsedRuns.push({
           id: generateId(),
-          time,
+          intervalMinutes,
           views,
           likes,
           shares,
@@ -253,8 +262,8 @@ export function ManualOrderPage({
         return;
       }
 
-      // Sort by time
-      parsedRuns.sort((a, b) => a.time.getTime() - b.time.getTime());
+      // Sort by interval
+      parsedRuns.sort((a, b) => a.intervalMinutes - b.intervalMinutes);
       
       setRuns(parsedRuns);
       setCreateSuccess(`✅ Parsed ${parsedRuns.length} runs successfully!`);
@@ -278,21 +287,11 @@ export function ManualOrderPage({
       try {
         const content = e.target?.result as string;
         
-        // For CSV files
-        if (file.name.endsWith('.csv')) {
-          setPasteData(content);
-          parsePastedData();
-        } 
-        // For Excel files (.xlsx)
-        else if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
-          // Note: For full Excel support, you'd need a library like xlsx
-          // For now, show message
-          setCreateError("Excel files require xlsx library. Please export as CSV or copy-paste data.");
-        }
-        else {
-          // Try as plain text
+        if (file.name.endsWith('.csv') || file.name.endsWith('.txt')) {
           setPasteData(content);
           setActiveTab('paste');
+        } else {
+          setCreateError("Supported formats: CSV, TXT");
         }
       } catch (error) {
         setCreateError("Failed to read file");
@@ -305,22 +304,19 @@ export function ManualOrderPage({
       setCreateError("Supported formats: CSV, TXT. For Excel, copy-paste data.");
     }
 
-    // Reset input
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
-  }, [parsePastedData]);
+  }, []);
 
   // Generate template
   const generateTemplate = useCallback((count: number, intervalMinutes: number) => {
     const newRuns: RunEntry[] = [];
-    const startTime = new Date();
     
     for (let i = 0; i < count; i++) {
-      const time = new Date(startTime.getTime() + i * intervalMinutes * 60000);
       newRuns.push({
         id: generateId(),
-        time,
+        intervalMinutes: i * intervalMinutes,
         views: 1000,
         likes: 50,
         shares: 20,
@@ -348,13 +344,14 @@ export function ManualOrderPage({
     setCreateError("");
     setCreateSuccess("");
     
+    // Determine targets
+    const bulkTargets = parsedBulkLinks.links;
+    const singleTarget = postUrl.trim();
+    const targets = bulkTargets.length > 0 ? bulkTargets : singleTarget ? [singleTarget] : [];
+    
     // Validations
-    if (!postUrl.trim()) {
-      setCreateError("Enter a post URL");
-      return;
-    }
-    if (!isValidUrl(postUrl.trim())) {
-      setCreateError("Invalid URL format");
+    if (targets.length === 0) {
+      setCreateError("Enter a post URL or paste bulk links");
       return;
     }
     if (!selectedApiId) {
@@ -392,24 +389,32 @@ export function ManualOrderPage({
       return;
     }
 
+    // Calculate actual times
+    const startTime = Date.now() + startDelayMinutes * 60000;
+    
+    const runsWithTime = runs.map((run) => ({
+      ...run,
+      actualTime: new Date(startTime + run.intervalMinutes * 60000),
+    }));
+
     // Prepare runs data
-    const viewRuns = runs.map((run) => ({
-      time: new Date(run.time).toISOString(),
+    const viewRuns = runsWithTime.map((run) => ({
+      time: run.actualTime.toISOString(),
       quantity: Math.floor(run.views),
     }));
     
-    const likesRuns = runs.map((run) => ({
-      time: new Date(run.time).toISOString(),
+    const likesRuns = runsWithTime.map((run) => ({
+      time: run.actualTime.toISOString(),
       quantity: Math.floor(run.likes),
     }));
     
-    const sharesRuns = runs.map((run) => ({
-      time: new Date(run.time).toISOString(),
+    const sharesRuns = runsWithTime.map((run) => ({
+      time: run.actualTime.toISOString(),
       quantity: Math.floor(run.shares),
     }));
     
-    const savesRuns = runs.map((run) => ({
-      time: new Date(run.time).toISOString(),
+    const savesRuns = runsWithTime.map((run) => ({
+      time: run.actualTime.toISOString(),
       quantity: Math.floor(run.saves),
     }));
 
@@ -433,62 +438,135 @@ export function ManualOrderPage({
     }
 
     setIsCreatingOrder(true);
-    setCreateSuccess("Deploying mission...");
+    setDeploymentProgress({ current: 0, total: targets.length });
+    
+    if (targets.length > 1) {
+      setCreateSuccess(`Processing ${targets.length} missions...`);
+    } else {
+      setCreateSuccess("Deploying mission...");
+    }
+
+    let successCount = 0;
+    let failedCount = 0;
+    let lastError = "";
 
     try {
-      const result = await createSmmOrder({
-        name: orderName.trim() || undefined,
-        apiUrl: selectedApi.url,
-        apiKey: selectedApi.key,
-        link: postUrl.trim(),
-        services: servicesPayload,
-      });
+      for (let index = 0; index < targets.length; index++) {
+        const targetUrl = targets[index];
+        setDeploymentProgress({ current: index + 1, total: targets.length });
 
-      const order: CreatedOrder = {
-        id: createOrderId(),
-        name: orderName.trim() || `Manual Mission #${createOrderId()}`,
-        schedulerOrderId: result.schedulerOrderId,
-        smmOrderId: result.orderId ?? "Scheduled",
-        link: postUrl.trim(),
-        totalViews: totals.views,
-        startDelayHours: 0,
-        patternType: "manual",
-        patternName: "Manual Schedule",
-        runs: runs.map((run) => ({
-          at: new Date(run.time),
-          views: run.views,
-          likes: run.likes,
-          shares: run.shares,
-          saves: run.saves,
-        })),
-        engagement: {
-          likes: totals.likes,
-          shares: totals.shares,
-          saves: totals.saves,
-        },
-        serviceId: viewsServiceId,
-        selectedAPI: selectedApi.name,
-        selectedBundle: selectedBundle.name,
-        status: result.status === "completed" ? "completed" : "running",
-        completedRuns: typeof result.completedRuns === "number" ? result.completedRuns : 0,
-        runStatuses: runs.map(() => "pending"),
-        createdAt: new Date().toISOString(),
-        lastUpdatedAt: new Date().toISOString(),
-      };
+        try {
+          const result = await createSmmOrder({
+            name: orderName.trim() || undefined,
+            apiUrl: selectedApi.url,
+            apiKey: selectedApi.key,
+            link: targetUrl,
+            services: servicesPayload,
+          });
 
-      onCreateOrder(order);
-      setCreateSuccess("✅ Mission Deployed Successfully!");
-      onNavigateToOrders("Manual Mission Deployed");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to create mission";
-      setCreateError(message);
-      setCreateSuccess("");
+          const order: CreatedOrder = {
+            id: createOrderId(),
+            name: orderName.trim() 
+              ? (targets.length > 1 ? `${orderName.trim()} #${index + 1}` : orderName.trim())
+              : `Manual Mission #${createOrderId()}`,
+            schedulerOrderId: result.schedulerOrderId,
+            smmOrderId: result.orderId ?? "Scheduled",
+            link: targetUrl,
+            totalViews: totals.views,
+            startDelayHours: Math.round(startDelayMinutes / 60),
+            patternType: "manual",
+            patternName: "Manual Schedule",
+            runs: runsWithTime.map((run) => ({
+              at: run.actualTime,
+              views: run.views,
+              likes: run.likes,
+              shares: run.shares,
+              saves: run.saves,
+            })),
+            engagement: {
+              likes: totals.likes,
+              shares: totals.shares,
+              saves: totals.saves,
+            },
+            serviceId: viewsServiceId,
+            selectedAPI: selectedApi.name,
+            selectedBundle: selectedBundle.name,
+            status: result.status === "completed" ? "completed" : "running",
+            completedRuns: typeof result.completedRuns === "number" ? result.completedRuns : 0,
+            runStatuses: runs.map(() => "pending"),
+            createdAt: new Date().toISOString(),
+            lastUpdatedAt: new Date().toISOString(),
+          };
+
+          onCreateOrder(order);
+          successCount++;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Failed";
+          lastError = message;
+          failedCount++;
+
+          // Create failed order record
+          const failedOrder: CreatedOrder = {
+            id: createOrderId(),
+            name: orderName.trim() 
+              ? (targets.length > 1 ? `${orderName.trim()} #${index + 1}` : orderName.trim())
+              : `Manual Mission #${createOrderId()}`,
+            smmOrderId: "N/A",
+            link: targetUrl,
+            totalViews: totals.views,
+            startDelayHours: Math.round(startDelayMinutes / 60),
+            patternType: "manual",
+            patternName: "Manual Schedule",
+            runs: runsWithTime.map((run) => ({
+              at: run.actualTime,
+              views: run.views,
+              likes: run.likes,
+              shares: run.shares,
+              saves: run.saves,
+            })),
+            engagement: {
+              likes: totals.likes,
+              shares: totals.shares,
+              saves: totals.saves,
+            },
+            serviceId: viewsServiceId,
+            selectedAPI: selectedApi.name,
+            selectedBundle: selectedBundle.name,
+            status: "failed",
+            completedRuns: 0,
+            runStatuses: runs.map(() => "cancelled"),
+            errorMessage: message,
+            createdAt: new Date().toISOString(),
+            lastUpdatedAt: new Date().toISOString(),
+          };
+          onCreateOrder(failedOrder);
+        }
+      }
+
+      // Final result
+      if (failedCount > 0 && successCount === 0) {
+        setCreateError(lastError || "All missions failed");
+        setCreateSuccess("");
+      } else if (targets.length > 1) {
+        const resultMsg = `✅ Done: ${successCount}/${targets.length} deployed`;
+        setCreateSuccess(resultMsg);
+        if (failedCount > 0) {
+          setCreateError(`${failedCount} failed: ${lastError}`);
+        }
+        onNavigateToOrders(resultMsg);
+      } else {
+        setCreateSuccess("✅ Mission Deployed Successfully!");
+        onNavigateToOrders("Manual Mission Deployed");
+      }
     } finally {
       setIsCreatingOrder(false);
+      setDeploymentProgress({ current: 0, total: 0 });
     }
   }, [
     isCreatingOrder,
     postUrl,
+    bulkLinks,
+    parsedBulkLinks,
     selectedApiId,
     selectedBundleId,
     runs,
@@ -496,6 +574,7 @@ export function ManualOrderPage({
     apis,
     bundles,
     orderName,
+    startDelayMinutes,
     onCreateOrder,
     onNavigateToOrders,
   ]);
@@ -505,31 +584,26 @@ export function ManualOrderPage({
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       
-      // Ctrl + Enter = Deploy
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
         e.preventDefault();
         handleDeploy();
         return;
       }
       
-      // Don't trigger shortcuts when typing in inputs
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
       
-      // Ctrl + N = Add new run
       if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
         e.preventDefault();
         addRun();
         return;
       }
       
-      // ? = Show shortcuts
       if (e.key === '?') {
         e.preventDefault();
         setShowShortcutsHelp((prev) => !prev);
         return;
       }
       
-      // Escape = Close modal
       if (e.key === 'Escape') {
         setShowShortcutsHelp(false);
         return;
@@ -542,9 +616,7 @@ export function ManualOrderPage({
 
   // Graph data
   const graphData = useMemo(() => {
-    const sortedRuns = [...runs].sort((a, b) => 
-      new Date(a.time).getTime() - new Date(b.time).getTime()
-    );
+    const sortedRuns = [...calculatedRuns].sort((a, b) => a.intervalMinutes - b.intervalMinutes);
     
     let cumulative = { views: 0, likes: 0, shares: 0, saves: 0 };
     
@@ -555,18 +627,14 @@ export function ManualOrderPage({
       cumulative.saves += run.saves;
       
       return {
-        time: new Date(run.time),
-        views: run.views,
-        likes: run.likes,
-        shares: run.shares,
-        saves: run.saves,
+        ...run,
         cumulativeViews: cumulative.views,
         cumulativeLikes: cumulative.likes,
         cumulativeShares: cumulative.shares,
         cumulativeSaves: cumulative.saves,
       };
     });
-  }, [runs]);
+  }, [calculatedRuns]);
 
   // Price calculation
   const price = useMemo(() => {
@@ -590,14 +658,33 @@ export function ManualOrderPage({
     const sharesPrice = (totals.shares / 1000) * sharesRate;
     const savesPrice = (totals.saves / 1000) * savesRate;
     
+    // Multiply by number of links for bulk orders
+    const linkCount = Math.max(1, parsedBulkLinks.valid || (postUrl.trim() ? 1 : 0));
+    
     return {
-      views: viewsPrice,
-      likes: likesPrice,
-      shares: sharesPrice,
-      saves: savesPrice,
-      total: viewsPrice + likesPrice + sharesPrice + savesPrice,
+      views: viewsPrice * linkCount,
+      likes: likesPrice * linkCount,
+      shares: sharesPrice * linkCount,
+      saves: savesPrice * linkCount,
+      total: (viewsPrice + likesPrice + sharesPrice + savesPrice) * linkCount,
+      perLink: viewsPrice + likesPrice + sharesPrice + savesPrice,
+      linkCount,
     };
-  }, [bundles, apis, selectedBundleId, selectedApiId, totals]);
+  }, [bundles, apis, selectedBundleId, selectedApiId, totals, parsedBulkLinks, postUrl]);
+
+  // Format time helper
+  const formatTime = (date: Date) => {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const formatDateTime = (date: Date) => {
+    return date.toLocaleString([], { 
+      month: 'short', 
+      day: 'numeric', 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+  };
 
   return (
     <div className="mx-auto max-w-7xl space-y-3 px-3 py-3">
@@ -641,10 +728,6 @@ export function ManualOrderPage({
                 <div className="flex items-center justify-between rounded-md bg-black/50 px-2 py-1.5">
                   <span className="text-gray-300">Show/Hide Shortcuts</span>
                   <kbd className="rounded border border-gray-600 bg-gray-800 px-1.5 py-0.5 text-[10px] text-gray-300">?</kbd>
-                </div>
-                <div className="flex items-center justify-between rounded-md bg-black/50 px-2 py-1.5">
-                  <span className="text-gray-300">Close Modal</span>
-                  <kbd className="rounded border border-gray-600 bg-gray-800 px-1.5 py-0.5 text-[10px] text-gray-300">Esc</kbd>
                 </div>
               </div>
             </motion.div>
@@ -704,6 +787,44 @@ export function ManualOrderPage({
               </div>
             </div>
 
+            {/* Bulk Links */}
+            <div className="mb-2">
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-[10px] text-gray-500">Bulk Links (one per line)</label>
+                {parsedBulkLinks.total > 0 && (
+                  <div className="flex items-center gap-2">
+                    <div className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                      parsedBulkLinks.invalid > 0 
+                        ? 'bg-red-500/20 border border-red-500/30 text-red-400'
+                        : 'bg-emerald-500/20 border border-emerald-500/30 text-emerald-400'
+                    }`}>
+                      <span>📦</span>
+                      <span>{parsedBulkLinks.valid}/{parsedBulkLinks.total}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <textarea
+                value={bulkLinks}
+                onChange={(e) => setBulkLinks(e.target.value)}
+                placeholder="Paste multiple URLs here..."
+                rows={2}
+                className={`w-full rounded-lg border bg-black px-2 py-1.5 text-xs text-white placeholder-gray-600 focus:outline-none resize-none transition ${
+                  parsedBulkLinks.invalid > 0
+                    ? 'border-red-500/50'
+                    : parsedBulkLinks.valid > 1
+                      ? 'border-emerald-500/50'
+                      : 'border-yellow-500/20'
+                }`}
+              />
+              {parsedBulkLinks.valid > 1 && (
+                <div className="mt-1 flex items-center gap-2 rounded-md border border-blue-500/30 bg-blue-500/10 px-2 py-1">
+                  <span className="text-xs">🚀</span>
+                  <span className="text-[10px] text-blue-300">{parsedBulkLinks.valid} missions will be created</span>
+                </div>
+              )}
+            </div>
+
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="text-[10px] text-gray-500 mb-1 block">API Panel</label>
@@ -734,6 +855,52 @@ export function ManualOrderPage({
                   ))}
                 </select>
               </div>
+            </div>
+          </div>
+
+          {/* Start Delay Block */}
+          <div className="rounded-xl border border-orange-500/20 bg-gradient-to-br from-orange-500/5 to-black p-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-base">⏰</span>
+                <div>
+                  <h3 className="text-xs font-semibold text-orange-400">Start Delay</h3>
+                  <p className="text-[9px] text-gray-500">Delay before first run starts</p>
+                </div>
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  value={startDelayMinutes}
+                  onChange={(e) => setStartDelayMinutes(Math.max(0, parseInt(e.target.value) || 0))}
+                  min={0}
+                  className="w-20 rounded-lg border border-orange-500/30 bg-black px-2 py-1.5 text-xs text-white text-center focus:border-orange-500/50 focus:outline-none"
+                />
+                <span className="text-[10px] text-gray-500">minutes</span>
+              </div>
+            </div>
+            
+            {/* Quick delay buttons */}
+            <div className="flex items-center gap-1 mt-2 flex-wrap">
+              {[0, 15, 30, 60, 120, 180].map((mins) => (
+                <button
+                  key={mins}
+                  onClick={() => setStartDelayMinutes(mins)}
+                  className={`rounded-md px-2 py-0.5 text-[10px] transition ${
+                    startDelayMinutes === mins
+                      ? 'bg-orange-500/30 border border-orange-500 text-orange-300'
+                      : 'border border-gray-700 text-gray-400 hover:text-orange-300 hover:border-orange-500/30'
+                  }`}
+                >
+                  {mins === 0 ? 'Now' : mins < 60 ? `${mins}m` : `${mins/60}h`}
+                </button>
+              ))}
+            </div>
+            
+            {/* Estimated start time */}
+            <div className="mt-2 text-[10px] text-orange-400/70">
+              📅 First run at: {formatDateTime(new Date(Date.now() + startDelayMinutes * 60000))}
             </div>
           </div>
 
@@ -784,35 +951,36 @@ export function ManualOrderPage({
                     onClick={() => generateTemplate(6, 60)}
                     className="rounded-md border border-gray-700 bg-black px-2 py-0.5 text-[10px] text-gray-400 hover:text-yellow-300 hover:border-yellow-500/30 transition"
                   >
-                    6 runs/1h
+                    6 runs @60min
                   </button>
                   <button
-                    onClick={() => generateTemplate(12, 60)}
+                    onClick={() => generateTemplate(12, 30)}
                     className="rounded-md border border-gray-700 bg-black px-2 py-0.5 text-[10px] text-gray-400 hover:text-yellow-300 hover:border-yellow-500/30 transition"
                   >
-                    12 runs/1h
+                    12 runs @30min
                   </button>
                   <button
                     onClick={() => generateTemplate(24, 60)}
                     className="rounded-md border border-gray-700 bg-black px-2 py-0.5 text-[10px] text-gray-400 hover:text-yellow-300 hover:border-yellow-500/30 transition"
                   >
-                    24 runs/1h
+                    24 runs @60min
                   </button>
                   <button
                     onClick={() => generateTemplate(12, 120)}
                     className="rounded-md border border-gray-700 bg-black px-2 py-0.5 text-[10px] text-gray-400 hover:text-yellow-300 hover:border-yellow-500/30 transition"
                   >
-                    12 runs/2h
+                    12 runs @2h
                   </button>
                 </div>
 
                 {/* Table */}
-                <div className="max-h-[300px] overflow-auto rounded-lg border border-gray-800">
+                <div className="max-h-[250px] overflow-auto rounded-lg border border-gray-800">
                   <table className="w-full text-[10px]">
                     <thead className="bg-gray-800 sticky top-0">
                       <tr>
                         <th className="px-2 py-1.5 text-left text-gray-400 font-medium">#</th>
-                        <th className="px-2 py-1.5 text-left text-gray-400 font-medium">Time</th>
+                        <th className="px-2 py-1.5 text-left text-gray-400 font-medium">⏱️ Interval (min)</th>
+                        <th className="px-2 py-1.5 text-left text-gray-400 font-medium">🕐 Time</th>
                         <th className="px-2 py-1.5 text-left text-gray-400 font-medium">👁️ Views</th>
                         <th className="px-2 py-1.5 text-left text-gray-400 font-medium">❤️ Likes</th>
                         <th className="px-2 py-1.5 text-left text-gray-400 font-medium">🔄 Shares</th>
@@ -821,7 +989,7 @@ export function ManualOrderPage({
                       </tr>
                     </thead>
                     <tbody>
-                      {runs.map((run, index) => (
+                      {calculatedRuns.map((run, index) => (
                         <motion.tr
                           key={run.id}
                           initial={{ opacity: 0, y: -10 }}
@@ -831,11 +999,15 @@ export function ManualOrderPage({
                           <td className="px-2 py-1 text-gray-500">{index + 1}</td>
                           <td className="px-2 py-1">
                             <input
-                              type="datetime-local"
-                              value={new Date(run.time).toISOString().slice(0, 16)}
-                              onChange={(e) => updateRun(run.id, 'time', new Date(e.target.value))}
-                              className="w-full rounded border border-gray-700 bg-black px-1 py-0.5 text-[10px] text-white focus:border-yellow-500/50 focus:outline-none"
+                              type="number"
+                              value={run.intervalMinutes}
+                              onChange={(e) => updateRun(run.id, 'intervalMinutes', parseInt(e.target.value) || 0)}
+                              className="w-16 rounded border border-gray-700 bg-black px-1 py-0.5 text-[10px] text-white focus:border-yellow-500/50 focus:outline-none"
+                              min={0}
                             />
+                          </td>
+                          <td className="px-2 py-1 text-[9px] text-gray-500">
+                            {formatTime(run.actualTime)}
                           </td>
                           <td className="px-2 py-1">
                             <input
@@ -897,7 +1069,7 @@ export function ManualOrderPage({
                     </tbody>
                     <tfoot className="bg-gray-800/50 border-t border-gray-700">
                       <tr>
-                        <td className="px-2 py-1.5 font-bold text-yellow-400" colSpan={2}>TOTAL</td>
+                        <td className="px-2 py-1.5 font-bold text-yellow-400" colSpan={3}>TOTAL</td>
                         <td className="px-2 py-1.5 font-bold text-yellow-300">{totals.views.toLocaleString()}</td>
                         <td className="px-2 py-1.5 font-bold text-pink-300">{totals.likes.toLocaleString()}</td>
                         <td className="px-2 py-1.5 font-bold text-blue-300">{totals.shares.toLocaleString()}</td>
@@ -934,16 +1106,17 @@ export function ManualOrderPage({
               <div>
                 <div className="mb-2 rounded-md border border-blue-500/20 bg-blue-500/10 p-2">
                   <p className="text-[10px] text-blue-300 mb-1">📝 Paste data from Excel/Sheets</p>
-                  <p className="text-[9px] text-blue-400/70">Format: Time, Views, Likes, Shares, Saves (tab or comma separated)</p>
+                  <p className="text-[9px] text-blue-400/70">Format: Interval(min), Views, Likes, Shares, Saves</p>
                 </div>
                 
                 <textarea
                   value={pasteData}
                   onChange={(e) => setPasteData(e.target.value)}
-                  placeholder={`Time\tViews\tLikes\tShares\tSaves
-10:00\t1000\t50\t20\t30
-11:00\t1500\t75\t30\t45
-12:00\t2000\t100\t40\t60`}
+                  placeholder={`Interval	Views	Likes	Shares	Saves
+0	1000	50	20	30
+60	1500	75	30	45
+120	2000	100	40	60
+180	1200	60	25	35`}
                   rows={8}
                   className="w-full rounded-lg border border-gray-700 bg-black px-3 py-2 text-xs text-white placeholder-gray-600 focus:border-blue-500/50 focus:outline-none resize-none font-mono"
                 />
@@ -971,7 +1144,7 @@ export function ManualOrderPage({
               <div>
                 <div className="mb-3 rounded-md border border-emerald-500/20 bg-emerald-500/10 p-2">
                   <p className="text-[10px] text-emerald-300 mb-1">📁 Upload CSV file</p>
-                  <p className="text-[9px] text-emerald-400/70">Columns: Time, Views, Likes, Shares, Saves</p>
+                  <p className="text-[9px] text-emerald-400/70">Columns: Interval(min), Views, Likes, Shares, Saves</p>
                 </div>
                 
                 <div
@@ -986,7 +1159,7 @@ export function ManualOrderPage({
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".csv,.txt,.xlsx,.xls"
+                  accept=".csv,.txt"
                   onChange={handleFileUpload}
                   className="hidden"
                 />
@@ -994,10 +1167,10 @@ export function ManualOrderPage({
                 <div className="mt-3 rounded-md border border-gray-700 bg-black/50 p-2">
                   <p className="text-[10px] text-gray-400 mb-1">📥 Sample CSV format:</p>
                   <pre className="text-[9px] text-gray-500 font-mono">
-{`Time,Views,Likes,Shares,Saves
-2024-01-15 10:00,1000,50,20,30
-2024-01-15 11:00,1500,75,30,45
-2024-01-15 12:00,2000,100,40,60`}
+{`Interval,Views,Likes,Shares,Saves
+0,1000,50,20,30
+60,1500,75,30,45
+120,2000,100,40,60`}
                   </pre>
                 </div>
               </div>
@@ -1036,17 +1209,22 @@ export function ManualOrderPage({
             </div>
           </div>
 
-          {/* Graph Preview */}
+          {/* Timeline Preview */}
           <div className="rounded-xl border border-yellow-500/20 bg-gradient-to-br from-gray-900 to-black p-3">
-            <h3 className="text-xs font-semibold text-yellow-400 mb-2">📈 Schedule Preview</h3>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-xs font-semibold text-yellow-400">📅 Timeline Preview</h3>
+              <span className="text-[9px] text-gray-500">
+                {formatDateTime(new Date(Date.now() + startDelayMinutes * 60000))} → {formatDateTime(calculatedRuns[calculatedRuns.length - 1]?.actualTime || new Date())}
+              </span>
+            </div>
             
             {runs.length > 0 ? (
-              <div className="h-48 relative">
+              <div className="h-40 relative">
                 {/* Simple Bar Chart */}
-                <div className="flex items-end justify-between h-40 gap-0.5 px-1">
+                <div className="flex items-end justify-between h-32 gap-0.5 px-1">
                   {graphData.map((point, index) => {
                     const maxViews = Math.max(...graphData.map(p => p.views));
-                    const heightPercent = (point.views / maxViews) * 100;
+                    const heightPercent = maxViews > 0 ? (point.views / maxViews) * 100 : 0;
                     
                     return (
                       <div
@@ -1057,7 +1235,8 @@ export function ManualOrderPage({
                           {/* Tooltip */}
                           <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block z-10">
                             <div className="rounded-md bg-gray-800 border border-gray-700 px-2 py-1 text-[9px] whitespace-nowrap">
-                              <p className="text-white font-medium">{point.time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                              <p className="text-white font-medium">+{point.intervalMinutes}min</p>
+                              <p className="text-gray-400">{formatTime(point.actualTime)}</p>
                               <p className="text-yellow-300">👁️ {point.views}</p>
                               <p className="text-pink-300">❤️ {point.likes}</p>
                               <p className="text-blue-300">🔄 {point.shares}</p>
@@ -1068,9 +1247,8 @@ export function ManualOrderPage({
                           {/* Bar */}
                           <motion.div
                             initial={{ height: 0 }}
-                            animate={{ height: `${heightPercent}%` }}
+                            animate={{ height: `${Math.max(heightPercent, 5)}%` }}
                             className="w-full bg-gradient-to-t from-yellow-600 to-yellow-400 rounded-t-sm min-h-[4px] cursor-pointer hover:from-yellow-500 hover:to-yellow-300 transition-colors"
-                            style={{ height: `${Math.max(heightPercent, 5)}%` }}
                           />
                         </div>
                       </div>
@@ -1081,10 +1259,10 @@ export function ManualOrderPage({
                 {/* X-axis labels */}
                 <div className="flex justify-between mt-1 px-1">
                   <span className="text-[8px] text-gray-500">
-                    {graphData[0]?.time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    Start (+{runs[0]?.intervalMinutes || 0}min)
                   </span>
                   <span className="text-[8px] text-gray-500">
-                    {graphData[graphData.length - 1]?.time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    End (+{runs[runs.length - 1]?.intervalMinutes || 0}min)
                   </span>
                 </div>
               </div>
@@ -1100,30 +1278,27 @@ export function ManualOrderPage({
             <h3 className="text-xs font-semibold text-yellow-400 mb-2">📊 Cumulative Growth</h3>
             
             {runs.length > 0 ? (
-              <div className="h-32 relative">
+              <div className="h-28 relative">
                 <svg className="w-full h-full" viewBox="0 0 100 50" preserveAspectRatio="none">
-                  {/* Grid lines */}
                   <line x1="0" y1="25" x2="100" y2="25" stroke="#374151" strokeWidth="0.2" />
                   
-                  {/* Cumulative Views Line */}
                   <polyline
                     fill="none"
                     stroke="#facc15"
                     strokeWidth="0.8"
                     points={graphData.map((point, index) => {
-                      const x = (index / (graphData.length - 1 || 1)) * 100;
-                      const y = 50 - (point.cumulativeViews / (totals.views || 1)) * 45;
+                      const x = graphData.length > 1 ? (index / (graphData.length - 1)) * 100 : 50;
+                      const y = totals.views > 0 ? 50 - (point.cumulativeViews / totals.views) * 45 : 50;
                       return `${x},${y}`;
                     }).join(' ')}
                   />
                   
-                  {/* Area fill */}
                   <polygon
                     fill="url(#gradient)"
                     opacity="0.3"
                     points={`0,50 ${graphData.map((point, index) => {
-                      const x = (index / (graphData.length - 1 || 1)) * 100;
-                      const y = 50 - (point.cumulativeViews / (totals.views || 1)) * 45;
+                      const x = graphData.length > 1 ? (index / (graphData.length - 1)) * 100 : 50;
+                      const y = totals.views > 0 ? 50 - (point.cumulativeViews / totals.views) * 45 : 50;
                       return `${x},${y}`;
                     }).join(' ')} 100,50`}
                   />
@@ -1136,14 +1311,13 @@ export function ManualOrderPage({
                   </defs>
                 </svg>
                 
-                {/* Labels */}
                 <div className="flex justify-between mt-1">
                   <span className="text-[8px] text-gray-500">0</span>
                   <span className="text-[8px] text-yellow-400 font-medium">{totals.views.toLocaleString()} views</span>
                 </div>
               </div>
             ) : (
-              <div className="h-32 flex items-center justify-center text-gray-500 text-xs">
+              <div className="h-28 flex items-center justify-center text-gray-500 text-xs">
                 No data to display
               </div>
             )}
@@ -1156,15 +1330,18 @@ export function ManualOrderPage({
                 <span className="text-xs font-semibold text-yellow-400">💰 Price</span>
                 
                 <div className="flex items-center gap-1 flex-wrap flex-1">
-                  <span className="text-[10px] text-gray-400">👁️{(totals.views/1000).toFixed(0)}k=₹{price.views.toFixed(0)}</span>
+                  <span className="text-[10px] text-gray-400">👁️{(totals.views/1000).toFixed(0)}k</span>
                   {totals.likes > 0 && (
-                    <span className="text-[10px] text-gray-400">❤️{(totals.likes/1000).toFixed(1)}k=₹{price.likes.toFixed(0)}</span>
+                    <span className="text-[10px] text-gray-400">❤️{(totals.likes/1000).toFixed(1)}k</span>
                   )}
                   {totals.shares > 0 && (
-                    <span className="text-[10px] text-gray-400">🔄{(totals.shares/1000).toFixed(1)}k=₹{price.shares.toFixed(0)}</span>
+                    <span className="text-[10px] text-gray-400">🔄{(totals.shares/1000).toFixed(1)}k</span>
                   )}
                   {totals.saves > 0 && (
-                    <span className="text-[10px] text-gray-400">💾{(totals.saves/1000).toFixed(1)}k=₹{price.saves.toFixed(0)}</span>
+                    <span className="text-[10px] text-gray-400">💾{(totals.saves/1000).toFixed(1)}k</span>
+                  )}
+                  {price.linkCount > 1 && (
+                    <span className="text-[10px] text-blue-400">×{price.linkCount} links</span>
                   )}
                 </div>
                 
@@ -1172,6 +1349,12 @@ export function ManualOrderPage({
                   <span className="text-sm font-bold text-yellow-400">₹{price.total.toFixed(0)}</span>
                 </div>
               </div>
+              
+              {price.linkCount > 1 && (
+                <div className="mt-1 text-[9px] text-gray-500 text-right">
+                  ₹{price.perLink.toFixed(0)} per link × {price.linkCount} links
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1181,10 +1364,27 @@ export function ManualOrderPage({
       <div className="flex items-center justify-between rounded-lg border border-yellow-500/20 bg-gradient-to-br from-gray-900 to-black px-3 py-2">
         <div className="flex items-center gap-2 flex-wrap">
           {createError && <span className="text-[10px] text-red-400">❌ {createError}</span>}
-          {createSuccess && <span className="text-[10px] text-emerald-400">{createSuccess}</span>}
+          {createSuccess && (
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-emerald-400">{createSuccess}</span>
+              {isCreatingOrder && deploymentProgress.total > 1 && (
+                <div className="flex items-center gap-1">
+                  <div className="h-1 w-16 overflow-hidden rounded-full bg-gray-700">
+                    <motion.div
+                      animate={{ width: `${(deploymentProgress.current / deploymentProgress.total) * 100}%` }}
+                      className="h-full rounded-full bg-yellow-400"
+                    />
+                  </div>
+                  <span className="text-[9px] text-yellow-400">{deploymentProgress.current}/{deploymentProgress.total}</span>
+                </div>
+              )}
+            </div>
+          )}
           {!createError && !createSuccess && (
             <span className="text-[10px] text-gray-500">
-              Ready to deploy {runs.length} runs • {totals.views.toLocaleString()} total views
+              Ready: {runs.length} runs • {totals.views.toLocaleString()} views
+              {parsedBulkLinks.valid > 1 && ` • ${parsedBulkLinks.valid} links`}
+              {startDelayMinutes > 0 && ` • starts in ${startDelayMinutes}min`}
             </span>
           )}
         </div>
@@ -1207,7 +1407,10 @@ export function ManualOrderPage({
             />
           )}
           <span className="relative">
-            {isCreatingOrder ? "🚀 Deploying..." : "🎯 Deploy Manual Mission"}
+            {isCreatingOrder 
+              ? `🚀 Deploying${deploymentProgress.total > 1 ? ` ${deploymentProgress.current}/${deploymentProgress.total}` : '...'}` 
+              : `🎯 Deploy${parsedBulkLinks.valid > 1 ? ` ${parsedBulkLinks.valid} Missions` : ' Mission'}`
+            }
           </span>
           <kbd className="relative hidden rounded border border-yellow-500/30 bg-yellow-500/10 px-1 py-0.5 text-[8px] sm:inline">
             Ctrl+↵
