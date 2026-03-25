@@ -4,18 +4,16 @@ import { APIsPage } from "./pages/APIsPage";
 import { BundlesPage } from "./pages/BundlesPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { NewOrderPage } from "./pages/NewOrderPage";
-import { ManualOrderPage } from "./pages/ManualOrderPage";
 import { OrdersPage } from "./pages/OrdersPage";
 import type { ApiPanel, Bundle, CreatedOrder, RunStatus } from "./types/order";
 import { fetchServices, updateOrderControl } from "./utils/api";
 import { cn } from "./utils/cn";
 
-type NavKey = "dashboard" | "new-order" | "manual-order" | "orders" | "apis" | "bundles";
+type NavKey = "dashboard" | "new-order" | "orders" | "apis" | "bundles";
 
 const NAV_ITEMS: { key: NavKey; label: string; icon: string }[] = [
   { key: "dashboard", label: "Dashboard", icon: "📊" },
   { key: "new-order", label: "New Order", icon: "⚡" },
-  { key: "manual-order", label: "Manual Order", icon: "🎯" },
   { key: "orders", label: "Orders", icon: "📦" },
   { key: "apis", label: "APIs", icon: "🔗" },
   { key: "bundles", label: "Bundles", icon: "📁" },
@@ -139,14 +137,7 @@ export default function App() {
   // 🦇 FIX: Load saved page from localStorage
   const [activePage, setActivePage] = useState<NavKey>(() => {
     const saved = localStorage.getItem("dev-smm-active-page");
-    if (
-      saved === "dashboard" ||
-      saved === "new-order" ||
-      saved === "manual-order" ||
-      saved === "orders" ||
-      saved === "apis" ||
-      saved === "bundles"
-    ) {
+    if (saved === "dashboard" || saved === "new-order" || saved === "orders" || saved === "apis" || saved === "bundles") {
       return saved;
     }
     return "new-order";
@@ -185,7 +176,6 @@ export default function App() {
   }, []);
 
   const content = useMemo(() => {
-    // New Order Page
     if (activePage === "new-order") {
       return (
         <NewOrderPage
@@ -201,29 +191,9 @@ export default function App() {
         />
       );
     }
-
-    // 🎯 Manual Order Page - NEW!
-    if (activePage === "manual-order") {
-      return (
-        <ManualOrderPage
-          apis={apis}
-          bundles={bundles}
-          orders={orders}
-          onCreateOrder={(order) => persistOrders([order, ...orders])}
-          onNavigateToOrders={(notice) => {
-            if (notice) setOrdersNotice(notice);
-            navigateToPage("orders");
-          }}
-        />
-      );
-    }
-
-    // Dashboard Page
     if (activePage === "dashboard") {
       return <DashboardPage orders={orders} />;
     }
-
-    // Orders Page
     if (activePage === "orders") {
       return (
         <OrdersPage
@@ -291,8 +261,6 @@ export default function App() {
         />
       );
     }
-
-    // APIs Page
     if (activePage === "apis") {
       return (
         <APIsPage
@@ -366,8 +334,6 @@ export default function App() {
         />
       );
     }
-
-    // Bundles Page (default)
     return (
       <BundlesPage
         apis={apis}
@@ -413,20 +379,7 @@ export default function App() {
         }}
       />
     );
-  }, [
-    activePage,
-    apis,
-    bundles,
-    orders,
-    fetchingApiId,
-    controllingOrderId,
-    ordersNotice,
-    cloneSourceOrder,
-    navigateToPage,
-    persistOrders,
-    persistApis,
-    persistBundles,
-  ]);
+  }, [activePage, apis, bundles, orders, fetchingApiId, controllingOrderId, ordersNotice, cloneSourceOrder, navigateToPage, persistOrders, persistApis, persistBundles]);
 
   return (
     <div className="min-h-screen bg-black text-gray-100">
