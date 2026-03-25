@@ -753,6 +753,9 @@ export function NewOrderPage({ apis, bundles, orders, prefillOrder, onCreateOrde
             setIsCreatingOrder(true);
             setCreateSuccess(`Processing ${targets.length} missions...`);
             
+            // 🔧 NEW: Generate batch ID for bulk orders
+            const batchId = targets.length > 1 ? `batch-${Date.now()}` : undefined;
+            
             try {
               const activeLinks = new Set(
                 orders
@@ -790,7 +793,10 @@ export function NewOrderPage({ apis, bundles, orders, prefillOrder, onCreateOrde
 
                   const order: CreatedOrder = {
                     id: createOrderId(),
-                    name: orderName.trim(),
+                    name: orderName.trim() || `Mission #${createOrderId()}`,
+                    batchId, // 🔧 NEW
+                    batchIndex: index + 1, // 🔧 NEW (1-based)
+                    batchTotal: targets.length, // 🔧 NEW
                     schedulerOrderId: result.schedulerOrderId,
                     smmOrderId: result.orderId ?? "Scheduled",
                     link: trimmedUrl,
@@ -810,9 +816,6 @@ export function NewOrderPage({ apis, bundles, orders, prefillOrder, onCreateOrde
                     lastUpdatedAt: new Date().toISOString(),
                   };
 
-                  if (!order.name) order.name = `Mission #${order.id}`;
-                  else if (targets.length > 1) order.name = `${order.name} #${index + 1}`;
-
                   onCreateOrder(order);
                   createdLinks.add(normalizedTarget);
                   successCount += 1;
@@ -820,7 +823,10 @@ export function NewOrderPage({ apis, bundles, orders, prefillOrder, onCreateOrde
                   const message = error instanceof Error ? error.message : "Failed";
                   const failedOrder: CreatedOrder = {
                     id: createOrderId(),
-                    name: orderName.trim() || "",
+                    name: orderName.trim() || `Mission #${createOrderId()}`,
+                    batchId, // 🔧 NEW
+                    batchIndex: index + 1, // 🔧 NEW
+                    batchTotal: targets.length, // 🔧 NEW
                     smmOrderId: "N/A",
                     link: trimmedUrl,
                     totalViews: quantity,
@@ -840,8 +846,6 @@ export function NewOrderPage({ apis, bundles, orders, prefillOrder, onCreateOrde
                     createdAt: new Date().toISOString(),
                     lastUpdatedAt: new Date().toISOString(),
                   };
-                  if (!failedOrder.name) failedOrder.name = `Mission #${failedOrder.id}`;
-                  else if (targets.length > 1) failedOrder.name = `${failedOrder.name} #${index + 1}`;
                   onCreateOrder(failedOrder);
                   failedCount += 1;
                   lastError = message;
