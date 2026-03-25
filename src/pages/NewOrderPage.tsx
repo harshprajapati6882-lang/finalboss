@@ -338,115 +338,140 @@ export function NewOrderPage({ apis, bundles, orders, prefillOrder, onCreateOrde
 
       <GrowthGraph plan={safePlan} />
 
-      {/* 💰 PRICE CALCULATOR */}
-      {selectedBundleId && safePlan.runs.length > 0 && (() => {
+{/* 💰 PRICE CALCULATOR - SIMPLIFIED */}
+{selectedBundleId && safePlan.runs.length > 0 && (
+  <div className="rounded-2xl border border-yellow-500/30 bg-gradient-to-br from-yellow-500/5 to-black p-5">
+    <div className="mb-4 flex items-center justify-between">
+      <h3 className="text-lg font-semibold text-yellow-400">💰 Price Calculator</h3>
+      <div className="text-right">
+        <p className="text-xs text-gray-600">Total Cost</p>
+        <p className="text-2xl font-bold text-yellow-400">
+          ₹{(() => {
+            const selectedBundle = bundles.find(b => b.id === selectedBundleId);
+            const selectedApi = apis.find(a => a.id === selectedApiId);
+            
+            if (!selectedBundle || !selectedApi) return "0.00";
+            
+            const viewsService = selectedApi.services.find(s => s.id === selectedBundle.serviceIds.views);
+            const likesService = selectedApi.services.find(s => s.id === selectedBundle.serviceIds.likes);
+            const sharesService = selectedApi.services.find(s => s.id === selectedBundle.serviceIds.shares);
+            const savesService = selectedApi.services.find(s => s.id === selectedBundle.serviceIds.saves);
+            
+            const totalViewsQty = safePlan.runs.reduce((sum, run) => sum + (run.views || 0), 0);
+            const totalLikesQty = safePlan.runs.reduce((sum, run) => sum + (run.likes || 0), 0);
+            const totalSharesQty = safePlan.runs.reduce((sum, run) => sum + (run.shares || 0), 0);
+            const totalSavesQty = safePlan.runs.reduce((sum, run) => sum + (run.saves || 0), 0);
+            
+            const viewsRate = parseFloat(viewsService?.rate || "0");
+            const likesRate = parseFloat(likesService?.rate || "0");
+            const sharesRate = parseFloat(sharesService?.rate || "0");
+            const savesRate = parseFloat(savesService?.rate || "0");
+            
+            const viewsPrice = (totalViewsQty / 1000) * viewsRate;
+            const likesPrice = includeLikes ? (totalLikesQty / 1000) * likesRate : 0;
+            const sharesPrice = includeShares ? (totalSharesQty / 1000) * sharesRate : 0;
+            const savesPrice = includeSaves ? (totalSavesQty / 1000) * savesRate : 0;
+            
+            return (viewsPrice + likesPrice + sharesPrice + savesPrice).toFixed(2);
+          })()}
+        </p>
+      </div>
+    </div>
+    
+    <div className="space-y-2">
+      {(() => {
         const selectedBundle = bundles.find(b => b.id === selectedBundleId);
         const selectedApi = apis.find(a => a.id === selectedApiId);
         
         if (!selectedBundle || !selectedApi) return null;
         
-        // Get service rates from API
         const viewsService = selectedApi.services.find(s => s.id === selectedBundle.serviceIds.views);
         const likesService = selectedApi.services.find(s => s.id === selectedBundle.serviceIds.likes);
         const sharesService = selectedApi.services.find(s => s.id === selectedBundle.serviceIds.shares);
         const savesService = selectedApi.services.find(s => s.id === selectedBundle.serviceIds.saves);
         
-        // Calculate totals
-        const totalViewsQuantity = (safePlan.runs || []).reduce((sum, run) => sum + run.views, 0);
-        const totalLikesQuantity = (safePlan.runs || []).reduce((sum, run) => sum + run.likes, 0);
-        const totalSharesQuantity = (safePlan.runs || []).reduce((sum, run) => sum + run.shares, 0);
-        const totalSavesQuantity = (safePlan.runs || []).reduce((sum, run) => sum + run.saves, 0);
+        const totalViewsQty = safePlan.runs.reduce((sum, run) => sum + (run.views || 0), 0);
+        const totalLikesQty = safePlan.runs.reduce((sum, run) => sum + (run.likes || 0), 0);
+        const totalSharesQty = safePlan.runs.reduce((sum, run) => sum + (run.shares || 0), 0);
+        const totalSavesQty = safePlan.runs.reduce((sum, run) => sum + (run.saves || 0), 0);
         
-        // Parse rates (rate is per 1000)
         const viewsRate = parseFloat(viewsService?.rate || "0");
         const likesRate = parseFloat(likesService?.rate || "0");
         const sharesRate = parseFloat(sharesService?.rate || "0");
         const savesRate = parseFloat(savesService?.rate || "0");
         
-        // Calculate prices (quantity / 1000 * rate)
-        const viewsPrice = (totalViewsQuantity / 1000) * viewsRate;
-        const likesPrice = includeLikes ? (totalLikesQuantity / 1000) * likesRate : 0;
-        const sharesPrice = includeShares ? (totalSharesQuantity / 1000) * sharesRate : 0;
-        const savesPrice = includeSaves ? (totalSavesQuantity / 1000) * savesRate : 0;
-        
-        const totalPrice = viewsPrice + likesPrice + sharesPrice + savesPrice;
+        const viewsPrice = (totalViewsQty / 1000) * viewsRate;
+        const likesPrice = includeLikes ? (totalLikesQty / 1000) * likesRate : 0;
+        const sharesPrice = includeShares ? (totalSharesQty / 1000) * sharesRate : 0;
+        const savesPrice = includeSaves ? (totalSavesQty / 1000) * savesRate : 0;
         
         return (
-          <div className="rounded-2xl border border-yellow-500/30 bg-gradient-to-br from-yellow-500/5 to-black p-5">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-yellow-400">💰 Price Calculator</h3>
-              <div className="text-right">
-                <p className="text-xs text-gray-600">Total Cost</p>
-                <p className="text-2xl font-bold text-yellow-400">₹{totalPrice.toFixed(2)}</p>
-              </div>
-            </div>
-            
-            <div className="space-y-2">
-              {/* Views */}
+          <>
+            {/* Views */}
+            {totalViewsQty > 0 && (
               <div className="flex items-center justify-between rounded-lg border border-yellow-500/20 bg-black/50 px-3 py-2">
                 <div className="flex items-center gap-2">
                   <span className="text-sm">👁️</span>
                   <div>
                     <p className="text-xs text-gray-400">Views</p>
-                    <p className="text-xs text-gray-600">{totalViewsQuantity.toLocaleString()} × ₹{viewsRate}/1k</p>
+                    <p className="text-xs text-gray-600">{totalViewsQty.toLocaleString()} × ₹{viewsRate}/1k</p>
                   </div>
                 </div>
                 <p className="text-sm font-medium text-yellow-300">₹{viewsPrice.toFixed(2)}</p>
               </div>
-              
-              {/* Likes */}
-              {includeLikes && totalLikesQuantity > 0 && (
-                <div className="flex items-center justify-between rounded-lg border border-yellow-500/20 bg-black/50 px-3 py-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm">❤️</span>
-                    <div>
-                      <p className="text-xs text-gray-400">Likes</p>
-                      <p className="text-xs text-gray-600">{totalLikesQuantity.toLocaleString()} × ₹{likesRate}/1k</p>
-                    </div>
-                  </div>
-                  <p className="text-sm font-medium text-yellow-300">₹{likesPrice.toFixed(2)}</p>
-                </div>
-              )}
-              
-              {/* Shares */}
-              {includeShares && totalSharesQuantity > 0 && (
-                <div className="flex items-center justify-between rounded-lg border border-yellow-500/20 bg-black/50 px-3 py-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm">🔄</span>
-                    <div>
-                      <p className="text-xs text-gray-400">Shares</p>
-                      <p className="text-xs text-gray-600">{totalSharesQuantity.toLocaleString()} × ₹{sharesRate}/1k</p>
-                    </div>
-                  </div>
-                  <p className="text-sm font-medium text-yellow-300">₹{sharesPrice.toFixed(2)}</p>
-                </div>
-              )}
-              
-              {/* Saves */}
-              {includeSaves && totalSavesQuantity > 0 && (
-                <div className="flex items-center justify-between rounded-lg border border-yellow-500/20 bg-black/50 px-3 py-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm">💾</span>
-                    <div>
-                      <p className="text-xs text-gray-400">Saves</p>
-                      <p className="text-xs text-gray-600">{totalSavesQuantity.toLocaleString()} × ₹{savesRate}/1k</p>
-                    </div>
-                  </div>
-                  <p className="text-sm font-medium text-yellow-300">₹{savesPrice.toFixed(2)}</p>
-                </div>
-              )}
-            </div>
+            )}
             
-            <div className="mt-4 rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-3 py-2">
-              <div className="flex items-center justify-between">
-                <p className="text-xs text-yellow-300">💡 Estimated Total</p>
-                <p className="text-lg font-bold text-yellow-400">₹{totalPrice.toFixed(2)}</p>
+            {/* Likes */}
+            {includeLikes && totalLikesQty > 0 && (
+              <div className="flex items-center justify-between rounded-lg border border-yellow-500/20 bg-black/50 px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm">❤️</span>
+                  <div>
+                    <p className="text-xs text-gray-400">Likes</p>
+                    <p className="text-xs text-gray-600">{totalLikesQty.toLocaleString()} × ₹{likesRate}/1k</p>
+                  </div>
+                </div>
+                <p className="text-sm font-medium text-yellow-300">₹{likesPrice.toFixed(2)}</p>
               </div>
-              <p className="mt-1 text-[10px] text-gray-600">Based on panel rates (₹ per 1000)</p>
-            </div>
-          </div>
+            )}
+            
+            {/* Shares */}
+            {includeShares && totalSharesQty > 0 && (
+              <div className="flex items-center justify-between rounded-lg border border-yellow-500/20 bg-black/50 px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm">🔄</span>
+                  <div>
+                    <p className="text-xs text-gray-400">Shares</p>
+                    <p className="text-xs text-gray-600">{totalSharesQty.toLocaleString()} × ₹{sharesRate}/1k</p>
+                  </div>
+                </div>
+                <p className="text-sm font-medium text-yellow-300">₹{sharesPrice.toFixed(2)}</p>
+              </div>
+            )}
+            
+            {/* Saves */}
+            {includeSaves && totalSavesQty > 0 && (
+              <div className="flex items-center justify-between rounded-lg border border-yellow-500/20 bg-black/50 px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm">💾</span>
+                  <div>
+                    <p className="text-xs text-gray-400">Saves</p>
+                    <p className="text-xs text-gray-600">{totalSavesQty.toLocaleString()} × ₹{savesRate}/1k</p>
+                  </div>
+                </div>
+                <p className="text-sm font-medium text-yellow-300">₹{savesPrice.toFixed(2)}</p>
+              </div>
+            )}
+          </>
         );
       })()}
+    </div>
+    
+    <div className="mt-4 rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-3 py-2">
+      <p className="text-center text-[10px] text-gray-600">💡 Rates are per 1000 units from your selected panel</p>
+    </div>
+  </div>
+)}
 
       <div className="flex flex-wrap items-center justify-between rounded-2xl border border-yellow-500/20 bg-gradient-to-br from-gray-900 to-black p-4">
         <p className="text-sm text-gray-500">Create mission will store the current plan, schedule, and engagement data.</p>
