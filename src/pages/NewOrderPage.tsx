@@ -1,560 +1,782 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>New Order - Order Management System</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+import { useMemo, useState } from "react";
+import { motion } from "framer-motion";
+import { GrowthGraph } from "../components/GrowthGraph";
+import { OrderForm } from "../components/OrderForm";
+import { PatternGenerator } from "../components/PatternGenerator";
+import type {
+  ApiPanel,
+  Bundle,
+  CreatedOrder,
+  DeliveryOption,
+  OrderConfig,
+  PatternPlan,
+  QuickPatternPreset,
+} from "../types/order";
+import { createSmmOrder } from "../utils/api";
+import { createPatternPlan } from "../utils/patterns";
 
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 10px;
-        }
+interface NewOrderPageProps {
+  apis: ApiPanel[];
+  bundles: Bundle[];
+  orders: CreatedOrder[];
+  prefillOrder?: CreatedOrder | null;
+  onCreateOrder: (order: CreatedOrder) => void;
+  onNavigateToOrders: (notice?: string) => void;
+}
 
-        .container {
-            max-width: 1000px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 20px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-            overflow: hidden;
-        }
+function createOrderId() {
+  return `ORD-${Date.now().toString().slice(-6)}`;
+}
 
-        .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 15px 25px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
+export function NewOrderPage({ apis, bundles, orders, prefillOrder, onCreateOrder, onNavigateToOrders }: NewOrderPageProps) {
+  const prefillApiId = prefillOrder ? apis.find((api) => api.name === prefillOrder.selectedAPI)?.id ?? "" : "";
+  const prefillBundleId = prefillOrder
+    ? bundles.find((bundle) => bundle.name === prefillOrder.selectedBundle && bundle.apiId === prefillApiId)?.id ?? ""
+    : "";
+  const prefillRuns = prefillOrder?.runs || [];
+  const prefillPlan: PatternPlan | null = prefillOrder
+    ? {
+        patternId: Number(prefillOrder.id.replace(/\D/g, "")) || Date.now() % 1000,
+        patternName: prefillOrder.patternName,
+        patternType: prefillOrder.patternType,
+        totalRuns: prefillRuns.length,
+        approximateIntervalMin:
+          prefillRuns.length > 1
+            ? Math.max(
+                1,
+                Math.round(
+                  prefillRuns
+                    .slice(1)
+                    .reduce((acc, run, index) => {
+                      const prev = prefillRuns[index];
+                      return acc + (run.at.getTime() - prev.at.getTime()) / 60000;
+                    }, 0) / (prefillRuns.length - 1)
+                )
+              )
+            : 0,
+        finishTime: prefillRuns[prefillRuns.length - 1]?.at ?? new Date(),
+        estimatedDurationHours:
+          prefillRuns.length > 1
+            ? Math.round(
+                ((prefillRuns[prefillRuns.length - 1]?.at.getTime() ?? Date.now()) -
+                  (prefillRuns[0]?.at.getTime() ?? Date.now())) /
+                  3600000
+              )
+            : 0,
+        risk: "Safe",
+        runs: prefillRuns,
+      }
+    : null;
 
-        .header h1 {
-            font-size: 22px;
-            font-weight: 600;
-        }
+  const [orderName, setOrderName] = useState(prefillOrder?.name && !prefillOrder.name.startsWith("Order #") ? prefillOrder.name : "");
+  const [postUrl, setPostUrl] = useState(prefillOrder?.link ?? "");
+  const [bulkLinks, setBulkLinks] = useState("");
+  const [totalViews, setTotalViews] = useState(prefillOrder?.totalViews ?? 50000);
+  const [selectedApiId, setSelectedApiId] = useState(prefillApiId);
+  const [selectedBundleId, setSelectedBundleId] = useState(prefillBundleId);
+  const [startDelayHours, setStartDelayHours] = useState(prefillOrder?.startDelayHours ?? 0);
+  const [includeLikes, setIncludeLikes] = useState((prefillOrder?.engagement.likes ?? 0) > 0);
+  const [includeShares, setIncludeShares] = useState((prefillOrder?.engagement.shares ?? 0) > 0);
+  const [includeSaves, setIncludeSaves] = useState((prefillOrder?.engagement.saves ?? 0) > 0);
+  const [variancePercent, setVariancePercent] = useState(40);
+  const [peakHoursBoost, setPeakHoursBoost] = useState(false);
+  const [quickPreset, setQuickPreset] = useState<QuickPatternPreset | null>(null);
+  const [customHours, setCustomHours] = useState(30);
+  const [delivery, setDelivery] = useState<DeliveryOption>({ mode: "auto", hours: 18, label: "Auto" });
+  const [seed, setSeed] = useState(0);
+  const [useClonedPlan, setUseClonedPlan] = useState(Boolean(prefillPlan));
+  const [clonedPlan] = useState<PatternPlan | null>(prefillPlan);
+  const [expandedRuns, setExpandedRuns] = useState(false);
+  const [createError, setCreateError] = useState("");
+  const [createSuccess, setCreateSuccess] = useState("");
+  const [isCreatingOrder, setIsCreatingOrder] = useState(false);
 
-        .back-button {
-            background: rgba(255,255,255,0.2);
-            color: white;
-            padding: 8px 20px;
-            border-radius: 25px;
-            text-decoration: none;
-            font-weight: 500;
-            transition: all 0.3s ease;
-            font-size: 14px;
-        }
+  const config: OrderConfig = useMemo(
+    () => ({
+      postUrl,
+      totalViews,
+      startDelayHours,
+      includeLikes,
+      includeShares,
+      includeSaves,
+      variancePercent,
+      peakHoursBoost,
+      quickPreset,
+      delivery:
+        delivery.mode === "custom"
+          ? { ...delivery, hours: customHours, label: "Custom" }
+          : delivery.mode === "auto"
+            ? { ...delivery, hours: Math.max(6, Math.min(48, delivery.hours)) }
+            : delivery,
+    }),
+    [
+      postUrl,
+      totalViews,
+      startDelayHours,
+      includeLikes,
+      includeShares,
+      includeSaves,
+      variancePercent,
+      peakHoursBoost,
+      quickPreset,
+      delivery,
+      customHours,
+    ]
+  );
 
-        .back-button:hover {
-            background: rgba(255,255,255,0.3);
-            transform: translateY(-2px);
-        }
+  const generatedPlan = useMemo(() => {
+    try {
+      const nextPlan = createPatternPlan(config);
+      return { ...nextPlan, runs: nextPlan?.runs || [] };
+    } catch (error) {
+      console.error("Pattern plan generation failed", error);
+      const now = new Date();
+      return {
+        patternId: 0,
+        patternName: "fallback",
+        patternType: "smooth-s-curve" as const,
+        totalRuns: 0,
+        approximateIntervalMin: 0,
+        finishTime: now,
+        estimatedDurationHours: 0,
+        risk: "Safe" as const,
+        runs: [],
+      };
+    }
+  }, [config, seed]);
 
-        .form-container {
-            padding: 20px 25px;
-        }
+  const plan = useMemo(() => {
+    const basePlan = useClonedPlan && clonedPlan
+      ? { ...clonedPlan, runs: clonedPlan.runs || [] }
+      : generatedPlan;
 
-        .form-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 15px;
-            margin-bottom: 15px;
-        }
+    const runs = basePlan?.runs || [];
 
-        .form-group {
-            display: flex;
-            flex-direction: column;
-        }
+    if (runs.length <= 1) return basePlan;
 
-        .form-group.full-width {
-            grid-column: 1 / -1;
-        }
+    const baseIntervalMin = basePlan.approximateIntervalMin || 120;
 
-        .form-group.half-width {
-            grid-column: span 2;
-        }
+    const newRuns = runs.map((run, i) => {
+      if (i === 0) return run;
 
-        label {
-            font-weight: 600;
-            margin-bottom: 4px;
-            color: #333;
-            font-size: 13px;
-        }
+      const prevTime = new Date(runs[i - 1].at).getTime();
+      const hour = new Date(prevTime).getHours();
 
-        input[type="text"],
-        input[type="number"],
-        input[type="date"],
-        select,
-        textarea {
-            padding: 8px 12px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            font-size: 13px;
-            transition: all 0.3s ease;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
+      let multiplier = 1;
 
-        input[type="text"]:focus,
-        input[type="number"]:focus,
-        input[type="date"]:focus,
-        select:focus,
-        textarea:focus {
-            outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-        }
+      if (hour >= 0 && hour < 6) multiplier = 1.4;
+      else if (hour >= 6 && hour < 12) multiplier = 1.1;
+      else if (hour >= 18 && hour <= 23) multiplier = 0.85;
 
-        textarea {
-            resize: vertical;
-            min-height: 60px;
-        }
+      const baseIntervalMs = baseIntervalMin * 60 * 1000 * multiplier;
+      const variation = baseIntervalMs * (Math.random() * 0.4 - 0.2);
+      const newTime = prevTime + baseIntervalMs + variation;
 
-        .items-section {
-            margin: 15px 0;
-            padding: 15px;
-            background: #f8f9fa;
-            border-radius: 12px;
-        }
+      return {
+        ...run,
+        at: new Date(newTime),
+      };
+    });
 
-        .items-section h3 {
-            color: #667eea;
-            margin-bottom: 12px;
-            font-size: 16px;
-        }
+    return {
+      ...basePlan,
+      runs: newRuns,
+    };
+  }, [useClonedPlan, clonedPlan, generatedPlan]);
 
-        .item-entry {
-            display: grid;
-            grid-template-columns: 2fr 1fr 1fr 1fr 1fr auto;
-            gap: 10px;
-            margin-bottom: 10px;
-            align-items: end;
-        }
+  const safePlan = useMemo(() => ({ ...plan, runs: plan?.runs || [] }), [plan]);
 
-        .item-entry input,
-        .item-entry select {
-            padding: 8px 10px;
-            font-size: 13px;
-        }
+  const bundleOptions = useMemo(() => {
+    if (!selectedApiId) return bundles;
+    return bundles.filter((bundle) => bundle.apiId === selectedApiId);
+  }, [bundles, selectedApiId]);
 
-        .add-item-btn,
-        .remove-item-btn {
-            padding: 8px 16px;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: 600;
-            transition: all 0.3s ease;
-            font-size: 13px;
-        }
+  function isValidUrl(value: string) {
+    try {
+      const parsed = new URL(value);
+      return parsed.protocol === "http:" || parsed.protocol === "https:";
+    } catch {
+      return false;
+    }
+  }
 
-        .add-item-btn {
-            background: #667eea;
-            color: white;
-            margin-top: 10px;
-        }
+  const handleApplyPreset = (preset: QuickPatternPreset) => {
+    setUseClonedPlan(false);
+    setQuickPreset(preset);
+    if (preset === "viral-boost") {
+      setVariancePercent(48);
+      setDelivery({ mode: "preset", label: "12h", hours: 12 });
+    }
+    if (preset === "fast-start") {
+      setVariancePercent(32);
+      setDelivery({ mode: "preset", label: "6h", hours: 6 });
+    }
+    if (preset === "trending-push") {
+      setVariancePercent(40);
+      setDelivery({ mode: "preset", label: "24h", hours: 24 });
+    }
+    if (preset === "slow-burn") {
+      setVariancePercent(22);
+      setDelivery({ mode: "preset", label: "48h", hours: 48 });
+    }
+    setSeed((current) => current + 1);
+    setExpandedRuns(false);
+  };
 
-        .add-item-btn:hover {
-            background: #5568d3;
-            transform: translateY(-2px);
-        }
+  const handleGenerate = () => {
+    setUseClonedPlan(false);
+    setSeed((current) => current + 1);
+    setExpandedRuns(false);
+  };
 
-        .remove-item-btn {
-            background: #ff4757;
-            color: white;
-            padding: 8px 12px;
-        }
-
-        .remove-item-btn:hover {
-            background: #ee5a6f;
-        }
-
-        .summary-section {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 15px;
-            margin: 15px 0;
-            padding: 15px;
-            background: #f0f4ff;
-            border-radius: 12px;
-        }
-
-        .summary-item {
-            display: flex;
-            flex-direction: column;
-        }
-
-        .summary-item label {
-            font-size: 12px;
-            color: #666;
-            margin-bottom: 4px;
-        }
-
-        .summary-item .value {
-            font-size: 18px;
-            font-weight: 700;
-            color: #667eea;
-        }
-
-        .payment-section {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 15px;
-            margin: 15px 0;
-        }
-
-        .checkbox-group {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 10px;
-            background: #f8f9fa;
-            border-radius: 8px;
-        }
-
-        .checkbox-group input[type="checkbox"] {
-            width: 18px;
-            height: 18px;
-            cursor: pointer;
-        }
-
-        .checkbox-group label {
-            margin: 0;
-            cursor: pointer;
-            font-size: 13px;
-        }
-
-        .button-group {
-            display: flex;
-            gap: 12px;
-            margin-top: 20px;
-            padding-top: 15px;
-            border-top: 2px solid #e0e0e0;
-        }
-
-        .submit-btn,
-        .reset-btn {
-            flex: 1;
-            padding: 12px;
-            border: none;
-            border-radius: 10px;
-            font-size: 15px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
-
-        .submit-btn {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-        }
-
-        .submit-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
-        }
-
-        .reset-btn {
-            background: #f1f3f5;
-            color: #495057;
-        }
-
-        .reset-btn:hover {
-            background: #e9ecef;
-        }
-
-        @media (max-width: 768px) {
-            .form-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .form-group.half-width {
-                grid-column: span 1;
-            }
-
-            .item-entry {
-                grid-template-columns: 1fr;
-            }
-
-            .summary-section,
-            .payment-section {
-                grid-template-columns: 1fr;
-            }
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>📋 Create New Order</h1>
-            <a href="dashboard.html" class="back-button">← Back to Dashboard</a>
+  return (
+    <div className="mx-auto max-w-7xl space-y-3 px-4 py-4">
+      {/* Compact Header */}
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-2xl">⚡</span>
+            <h2 className="text-xl font-bold tracking-tight text-yellow-400">New Mission</h2>
+          </div>
+          <p className="text-xs text-gray-500">Configure view delivery patterns</p>
         </div>
+      </motion.div>
 
-        <form id="orderForm" class="form-container">
-            <!-- Customer Information -->
-            <div class="form-grid">
-                <div class="form-group">
-                    <label for="customerName">Customer Name *</label>
-                    <input type="text" id="customerName" required>
-                </div>
+      {/* Main Grid - Tighter Layout */}
+      <div className="grid gap-4 xl:grid-cols-[1.1fr_1fr]">
+        <OrderForm
+          orderName={orderName}
+          postUrl={postUrl}
+          bulkLinks={bulkLinks}
+          totalViews={totalViews}
+          selectedApiId={selectedApiId}
+          selectedBundleId={selectedBundleId}
+          apiOptions={apis.map((api) => ({ id: api.id, name: api.name }))}
+          bundleOptions={bundleOptions.map((bundle) => ({ id: bundle.id, name: bundle.name }))}
+          startDelayHours={startDelayHours}
+          variancePercent={variancePercent}
+          includeLikes={includeLikes}
+          includeShares={includeShares}
+          includeSaves={includeSaves}
+          peakHoursBoost={peakHoursBoost}
+          delivery={delivery}
+          customHours={customHours}
+          onPostUrlChange={setPostUrl}
+          onBulkLinksChange={setBulkLinks}
+          onOrderNameChange={setOrderName}
+          onTotalViewsChange={(value) => {
+            setUseClonedPlan(false);
+            const safeValue = Number.isFinite(value) ? value : 0;
+            setTotalViews(Math.max(0, Math.floor(safeValue)));
+          }}
+          onSelectedApiChange={(apiId) => {
+            setSelectedApiId(apiId);
+            setSelectedBundleId("");
+          }}
+          onSelectedBundleChange={setSelectedBundleId}
+          onStartDelayHoursChange={(value) => {
+            setUseClonedPlan(false);
+            const safeValue = Number.isFinite(value) ? value : 0;
+            setStartDelayHours(Math.max(0, Math.min(168, Math.floor(safeValue))));
+          }}
+          onVarianceChange={(value) => {
+            setUseClonedPlan(false);
+            const safeValue = Number.isFinite(value) ? value : 0;
+            setVariancePercent(Math.max(0, Math.min(50, safeValue)));
+          }}
+          onToggleLikes={(value) => {
+            setUseClonedPlan(false);
+            setIncludeLikes(value);
+          }}
+          onToggleShares={(value) => {
+            setUseClonedPlan(false);
+            setIncludeShares(value);
+          }}
+          onToggleSaves={(value) => {
+            setUseClonedPlan(false);
+            setIncludeSaves(value);
+          }}
+          onPeakHoursChange={(value) => {
+            setUseClonedPlan(false);
+            setPeakHoursBoost(value);
+          }}
+          onDeliveryChange={(option) => {
+            setUseClonedPlan(false);
+            setDelivery(option);
+          }}
+          onCustomHoursChange={(hours) => {
+            setUseClonedPlan(false);
+            const safeHours = Number.isFinite(hours) ? hours : 1;
+            const clampedHours = Math.max(1, Math.min(96, safeHours));
+            setCustomHours(clampedHours);
+            setDelivery({ mode: "custom", label: "Custom", hours: clampedHours });
+          }}
+        />
 
-                <div class="form-group">
-                    <label for="mobileNumber">Mobile Number *</label>
-                    <input type="text" id="mobileNumber" required>
-                </div>
-
-                <div class="form-group">
-                    <label for="orderDate">Order Date *</label>
-                    <input type="date" id="orderDate" required>
-                </div>
-
-                <div class="form-group">
-                    <label for="deliveryDate">Delivery Date *</label>
-                    <input type="date" id="deliveryDate" required>
-                </div>
-
-                <div class="form-group">
-                    <label for="trialDate">Trial Date</label>
-                    <input type="date" id="trialDate">
-                </div>
-
-                <div class="form-group">
-                    <label for="urgency">Urgency</label>
-                    <select id="urgency">
-                        <option value="Normal">Normal</option>
-                        <option value="Urgent">Urgent</option>
-                        <option value="Very Urgent">Very Urgent</option>
-                    </select>
-                </div>
-
-                <div class="form-group full-width">
-                    <label for="address">Address</label>
-                    <textarea id="address" rows="2"></textarea>
-                </div>
+        {/* Right Column - Compact */}
+        <div className="space-y-3">
+          {/* Detection Risk - Compact Inline */}
+          <div className="flex items-center justify-between rounded-xl border border-yellow-500/20 bg-gradient-to-br from-gray-900 to-black px-4 py-3">
+            <div className="flex items-center gap-3">
+              <span className="text-base">🎯</span>
+              <div>
+                <h2 className="text-sm font-semibold text-yellow-400">Detection Risk</h2>
+                <p className="text-[10px] text-gray-500">Duration: {safePlan.estimatedDurationHours}h</p>
+              </div>
             </div>
-
-            <!-- Items Section -->
-            <div class="items-section">
-                <h3>Order Items</h3>
-                <div id="itemsContainer">
-                    <div class="item-entry">
-                        <div>
-                            <label>Item Description *</label>
-                            <input type="text" class="item-description" required>
-                        </div>
-                        <div>
-                            <label>Quantity *</label>
-                            <input type="number" class="item-quantity" min="1" value="1" required>
-                        </div>
-                        <div>
-                            <label>Unit</label>
-                            <select class="item-unit">
-                                <option value="Pieces">Pieces</option>
-                                <option value="Meters">Meters</option>
-                                <option value="Sets">Sets</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label>Rate *</label>
-                            <input type="number" class="item-rate" min="0" step="0.01" required>
-                        </div>
-                        <div>
-                            <label>Amount</label>
-                            <input type="number" class="item-amount" readonly>
-                        </div>
-                        <div>
-                            <label>&nbsp;</label>
-                            <button type="button" class="remove-item-btn" onclick="removeItem(this)">✕</button>
-                        </div>
-                    </div>
-                </div>
-                <button type="button" class="add-item-btn" onclick="addItem()">+ Add Item</button>
+            <div className="rounded-lg border border-yellow-500/30 bg-black px-3 py-1.5">
+              <span
+                className={`text-sm font-semibold ${
+                  safePlan.risk === "Safe"
+                    ? "text-emerald-400"
+                    : safePlan.risk === "Medium"
+                      ? "text-yellow-400"
+                      : "text-red-400"
+                }`}
+              >
+                {safePlan.risk}
+              </span>
             </div>
+          </div>
 
-            <!-- Summary Section -->
-            <div class="summary-section">
-                <div class="summary-item">
-                    <label>Total Amount</label>
-                    <div class="value" id="totalAmount">₹0.00</div>
-                </div>
-                <div class="summary-item">
-                    <label>Advance Paid</label>
-                    <div class="value" id="advancePaidDisplay">₹0.00</div>
-                </div>
-                <div class="summary-item">
-                    <label>Balance Due</label>
-                    <div class="value" id="balanceDue">₹0.00</div>
-                </div>
+          {/* Schedule Preview */}
+          <PatternGenerator
+            plan={safePlan}
+            expandedRuns={expandedRuns}
+            onToggleRuns={() => setExpandedRuns((prev) => !prev)}
+          />
+        </div>
+      </div>
+
+      {/* Growth Graph with Preset Buttons - Compact */}
+      <GrowthGraph 
+        plan={safePlan}
+        selectedPreset={quickPreset}
+        onApplyPreset={handleApplyPreset}
+        onGenerate={handleGenerate}
+      />
+
+      {/* Price Calculator & Deploy Button - Combined Row */}
+      <div className="grid gap-3 lg:grid-cols-[1fr_auto]">
+        {/* 💰 PRICE CALCULATOR - Compact */}
+        {selectedBundleId && safePlan.runs.length > 0 && (
+          <div className="rounded-xl border border-yellow-500/30 bg-gradient-to-br from-yellow-500/5 to-black p-3">
+            <div className="flex items-center justify-between gap-4">
+              <h3 className="text-sm font-semibold text-yellow-400">💰 Price</h3>
+              
+              {/* Inline Price Items */}
+              <div className="flex flex-wrap items-center gap-2">
+                {(() => {
+                  const selectedBundle = bundles.find(b => b.id === selectedBundleId);
+                  const selectedApi = apis.find(a => a.id === selectedApiId);
+                  
+                  if (!selectedBundle || !selectedApi) return null;
+                  
+                  const viewsService = selectedApi.services.find(s => s.id === selectedBundle.serviceIds.views);
+                  const likesService = selectedApi.services.find(s => s.id === selectedBundle.serviceIds.likes);
+                  const sharesService = selectedApi.services.find(s => s.id === selectedBundle.serviceIds.shares);
+                  const savesService = selectedApi.services.find(s => s.id === selectedBundle.serviceIds.saves);
+                  
+                  const totalViewsQty = safePlan.runs.reduce((sum, run) => sum + (run.views || 0), 0);
+                  const totalLikesQty = safePlan.runs.reduce((sum, run) => sum + (run.likes || 0), 0);
+                  const totalSharesQty = safePlan.runs.reduce((sum, run) => sum + (run.shares || 0), 0);
+                  const totalSavesQty = safePlan.runs.reduce((sum, run) => sum + (run.saves || 0), 0);
+                  
+                  const viewsRate = parseFloat(viewsService?.rate || "0");
+                  const likesRate = parseFloat(likesService?.rate || "0");
+                  const sharesRate = parseFloat(sharesService?.rate || "0");
+                  const savesRate = parseFloat(savesService?.rate || "0");
+                  
+                  const viewsPrice = (totalViewsQty / 1000) * viewsRate;
+                  const likesPrice = includeLikes ? (totalLikesQty / 1000) * likesRate : 0;
+                  const sharesPrice = includeShares ? (totalSharesQty / 1000) * sharesRate : 0;
+                  const savesPrice = includeSaves ? (totalSavesQty / 1000) * savesRate : 0;
+                  
+                  return (
+                    <>
+                      {totalViewsQty > 0 && (
+                        <div className="flex items-center gap-1 rounded-md border border-yellow-500/20 bg-black/50 px-2 py-1">
+                          <span className="text-xs">👁️</span>
+                          <span className="text-[10px] text-gray-400">{(totalViewsQty/1000).toFixed(0)}k</span>
+                          <span className="text-xs font-medium text-yellow-300">₹{viewsPrice.toFixed(0)}</span>
+                        </div>
+                      )}
+                      
+                      {includeLikes && totalLikesQty > 0 && (
+                        <div className="flex items-center gap-1 rounded-md border border-yellow-500/20 bg-black/50 px-2 py-1">
+                          <span className="text-xs">❤️</span>
+                          <span className="text-[10px] text-gray-400">{(totalLikesQty/1000).toFixed(1)}k</span>
+                          <span className="text-xs font-medium text-yellow-300">₹{likesPrice.toFixed(0)}</span>
+                        </div>
+                      )}
+                      
+                      {includeShares && totalSharesQty > 0 && (
+                        <div className="flex items-center gap-1 rounded-md border border-yellow-500/20 bg-black/50 px-2 py-1">
+                          <span className="text-xs">🔄</span>
+                          <span className="text-[10px] text-gray-400">{(totalSharesQty/1000).toFixed(1)}k</span>
+                          <span className="text-xs font-medium text-yellow-300">₹{sharesPrice.toFixed(0)}</span>
+                        </div>
+                      )}
+                      
+                      {includeSaves && totalSavesQty > 0 && (
+                        <div className="flex items-center gap-1 rounded-md border border-yellow-500/20 bg-black/50 px-2 py-1">
+                          <span className="text-xs">💾</span>
+                          <span className="text-[10px] text-gray-400">{(totalSavesQty/1000).toFixed(1)}k</span>
+                          <span className="text-xs font-medium text-yellow-300">₹{savesPrice.toFixed(0)}</span>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+              
+              {/* Total */}
+              <div className="flex items-center gap-2 rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-3 py-1.5">
+                <span className="text-xs text-gray-400">Total:</span>
+                <span className="text-lg font-bold text-yellow-400">
+                  ₹{(() => {
+                    const selectedBundle = bundles.find(b => b.id === selectedBundleId);
+                    const selectedApi = apis.find(a => a.id === selectedApiId);
+                    
+                    if (!selectedBundle || !selectedApi) return "0";
+                    
+                    const viewsService = selectedApi.services.find(s => s.id === selectedBundle.serviceIds.views);
+                    const likesService = selectedApi.services.find(s => s.id === selectedBundle.serviceIds.likes);
+                    const sharesService = selectedApi.services.find(s => s.id === selectedBundle.serviceIds.shares);
+                    const savesService = selectedApi.services.find(s => s.id === selectedBundle.serviceIds.saves);
+                    
+                    const totalViewsQty = safePlan.runs.reduce((sum, run) => sum + (run.views || 0), 0);
+                    const totalLikesQty = safePlan.runs.reduce((sum, run) => sum + (run.likes || 0), 0);
+                    const totalSharesQty = safePlan.runs.reduce((sum, run) => sum + (run.shares || 0), 0);
+                    const totalSavesQty = safePlan.runs.reduce((sum, run) => sum + (run.saves || 0), 0);
+                    
+                    const viewsRate = parseFloat(viewsService?.rate || "0");
+                    const likesRate = parseFloat(likesService?.rate || "0");
+                    const sharesRate = parseFloat(sharesService?.rate || "0");
+                    const savesRate = parseFloat(savesService?.rate || "0");
+                    
+                    const viewsPrice = (totalViewsQty / 1000) * viewsRate;
+                    const likesPrice = includeLikes ? (totalLikesQty / 1000) * likesRate : 0;
+                    const sharesPrice = includeShares ? (totalSharesQty / 1000) * sharesRate : 0;
+                    const savesPrice = includeSaves ? (totalSavesQty / 1000) * savesRate : 0;
+                    
+                    return (viewsPrice + likesPrice + sharesPrice + savesPrice).toFixed(0);
+                  })()}
+                </span>
+              </div>
             </div>
+          </div>
+        )}
 
-            <!-- Payment Section -->
-            <div class="payment-section">
-                <div class="form-group">
-                    <label for="advancePaid">Advance Payment</label>
-                    <input type="number" id="advancePaid" min="0" step="0.01" value="0">
-                </div>
+        {/* Deploy Button - Compact */}
+        <div className="flex items-center gap-3 rounded-xl border border-yellow-500/20 bg-gradient-to-br from-gray-900 to-black px-4 py-2">
+          <p className="hidden text-xs text-gray-500 lg:block">Ready to deploy</p>
+          <button
+            type="button"
+            disabled={isCreatingOrder}
+            onClick={async () => {
+              setCreateError("");
+              setCreateSuccess("");
+              if (!selectedBundleId) {
+                setCreateError("Select a bundle before creating a mission.");
+                return;
+              }
+              const bulkTargets = bulkLinks
+                .split(/\r?\n/)
+                .map((line) => line.trim())
+                .filter(Boolean);
+              const singleTarget = postUrl.trim();
+              const targets = bulkTargets.length > 0 ? bulkTargets : singleTarget ? [singleTarget] : [];
+              if (!targets.length) {
+                setCreateError("Add a post URL or paste multiple links before creating a mission.");
+                return;
+              }
+              const invalidTarget = targets.find((target) => !isValidUrl(target));
+              if (invalidTarget) {
+                setCreateError(`Invalid URL found: ${invalidTarget}`);
+                return;
+              }
 
-                <div class="form-group">
-                    <label for="paymentMethod">Payment Method</label>
-                    <select id="paymentMethod">
-                        <option value="Cash">Cash</option>
-                        <option value="Online">Online</option>
-                        <option value="Card">Card</option>
-                        <option value="UPI">UPI</option>
-                    </select>
-                </div>
+              const selectedApi = apis.find((api) => api.id === selectedApiId) ?? null;
+              if (!selectedApi) {
+                setCreateError("Select an API before creating a mission.");
+                return;
+              }
+              if (!selectedApi.url.trim()) {
+                setCreateError("API URL is required.");
+                return;
+              }
+              if (!isValidUrl(selectedApi.url.trim())) {
+                setCreateError("API URL must be a valid URL.");
+                return;
+              }
+              if (!selectedApi.key.trim()) {
+                setCreateError("API key is required.");
+                return;
+              }
 
-                <div class="checkbox-group">
-                    <input type="checkbox" id="measurementDone">
-                    <label for="measurementDone">Measurement Completed</label>
-                </div>
+              const selectedBundle = bundles.find((bundle) => bundle.id === selectedBundleId);
+              if (!selectedBundle) {
+                setCreateError("Selected bundle is missing. Please pick a valid bundle.");
+                return;
+              }
+              const viewsServiceId = selectedBundle.serviceIds.views.trim();
+              if (!viewsServiceId) {
+                setCreateError("Selected bundle has no Views service ID.");
+                return;
+              }
+              const likesServiceId = selectedBundle.serviceIds.likes.trim();
+              const sharesServiceId = selectedBundle.serviceIds.shares.trim();
+              const savesServiceId = selectedBundle.serviceIds.saves.trim();
+              if (includeLikes && !likesServiceId) {
+                setCreateError("Selected bundle has no Likes service ID.");
+                return;
+              }
+              if (includeShares && !sharesServiceId) {
+                setCreateError("Selected bundle has no Shares service ID.");
+                return;
+              }
+              if (includeSaves && !savesServiceId) {
+                setCreateError("Selected bundle has no Saves service ID.");
+                return;
+              }
 
-                <div class="checkbox-group">
-                    <input type="checkbox" id="readyToDeliver">
-                    <label for="readyToDeliver">Ready to Deliver</label>
-                </div>
-            </div>
+              const quantity = (safePlan?.runs || []).reduce((acc, run) => acc + run.views, 0);
+              if (!Number.isFinite(quantity) || quantity <= 0) {
+                setCreateError("Quantity must be a valid number greater than 0.");
+                return;
+              }
+              if (quantity < 100) {
+                setCreateError("Views must be at least 100.");
+                return;
+              }
 
-            <!-- Notes -->
-            <div class="form-group full-width">
-                <label for="notes">Additional Notes</label>
-                <textarea id="notes" rows="2"></textarea>
-            </div>
+              const totalLikes = (safePlan?.runs || []).reduce((acc, run) => acc + run.likes, 0);
+              const totalShares = (safePlan?.runs || []).reduce((acc, run) => acc + run.shares, 0);
+              const totalSaves = (safePlan?.runs || []).reduce((acc, run) => acc + run.saves, 0);
 
-            <!-- Buttons -->
-            <div class="button-group">
-                <button type="submit" class="submit-btn">💾 Save Order</button>
-                <button type="reset" class="reset-btn">🔄 Reset Form</button>
-            </div>
-        </form>
-    </div>
+              if (includeLikes && totalLikes < 10) {
+                setCreateError("Likes must be at least 10.");
+                return;
+              }
+              if (includeShares && totalShares < 20) {
+                setCreateError("Shares must be at least 20.");
+                return;
+              }
+              if (includeSaves && totalSaves < 10) {
+                setCreateError("Saves must be at least 10.");
+                return;
+              }
 
-    <script>
-        // Set default dates
-        document.getElementById('orderDate').valueAsDate = new Date();
-        let deliveryDate = new Date();
-        deliveryDate.setDate(deliveryDate.getDate() + 7);
-        document.getElementById('deliveryDate').valueAsDate = deliveryDate;
-
-        // Add item functionality
-        function addItem() {
-            const container = document.getElementById('itemsContainer');
-            const newItem = container.firstElementChild.cloneNode(true);
-            
-            // Clear values
-            newItem.querySelectorAll('input').forEach(input => {
-                if (input.classList.contains('item-quantity')) {
-                    input.value = 1;
-                } else {
-                    input.value = '';
+              if (quantity > 100000) {
+                const proceed = window.confirm("Are you sure? This is a large mission.");
+                if (!proceed) {
+                  return;
                 }
-            });
-            
-            container.appendChild(newItem);
-            attachItemListeners(newItem);
-        }
+              }
+              const viewRuns = (safePlan?.runs || []).map((run) => ({
+                time: run.at.toISOString(),
+                quantity: Math.floor(run.views),
+              }));
+              if (
+                !viewRuns.length ||
+                viewRuns.some((run) => !run.time || !Number.isFinite(run.quantity) || run.quantity <= 0)
+              ) {
+                setCreateError("Run schedule is invalid. Regenerate pattern and try again.");
+                return;
+              }
 
-        // Remove item functionality
-        function removeItem(button) {
-            const container = document.getElementById('itemsContainer');
-            if (container.children.length > 1) {
-                button.closest('.item-entry').remove();
-                calculateTotals();
-            } else {
-                alert('At least one item is required!');
-            }
-        }
+              const likesRuns = (safePlan?.runs || []).map((run) => ({
+                time: run.at.toISOString(),
+                quantity: Math.max(0, Math.floor(run.likes)),
+              }));
+              const sharesRuns = (safePlan?.runs || []).map((run) => ({
+                time: run.at.toISOString(),
+                quantity: Math.max(0, Math.floor(run.shares)),
+              }));
+              const savesRuns = (safePlan?.runs || []).map((run) => ({
+                time: run.at.toISOString(),
+                quantity: Math.max(0, Math.floor(run.saves)),
+              }));
 
-        // Attach listeners to item inputs
-        function attachItemListeners(item) {
-            const quantity = item.querySelector('.item-quantity');
-            const rate = item.querySelector('.item-rate');
-            const amount = item.querySelector('.item-amount');
+              const servicesPayload: {
+                views: { serviceId: string; runs: Array<{ time: string; quantity: number }> };
+                likes?: { serviceId: string; runs: Array<{ time: string; quantity: number }> };
+                shares?: { serviceId: string; runs: Array<{ time: string; quantity: number }> };
+                saves?: { serviceId: string; runs: Array<{ time: string; quantity: number }> };
+              } = {
+                views: {
+                  serviceId: viewsServiceId,
+                  runs: viewRuns,
+                },
+              };
 
-            function updateAmount() {
-                const qty = parseFloat(quantity.value) || 0;
-                const rateVal = parseFloat(rate.value) || 0;
-                amount.value = (qty * rateVal).toFixed(2);
-                calculateTotals();
-            }
+              if (includeLikes) {
+                servicesPayload.likes = {
+                  serviceId: likesServiceId,
+                  runs: likesRuns,
+                };
+              }
+              if (includeShares) {
+                servicesPayload.shares = {
+                  serviceId: sharesServiceId,
+                  runs: sharesRuns,
+                };
+              }
+              if (includeSaves) {
+                servicesPayload.saves = {
+                  serviceId: savesServiceId,
+                  runs: savesRuns,
+                };
+              }
 
-            quantity.addEventListener('input', updateAmount);
-            rate.addEventListener('input', updateAmount);
-        }
+              setIsCreatingOrder(true);
+              setCreateSuccess(`Processing ${targets.length} missions...`);
+              try {
+                const activeLinks = new Set(
+                  orders
+                    .filter((order) => {
+                      const now = Date.now();
+                      const runs = order.runs || [];
+                      if (!runs.length) return false;
+                      const allRunsCompleted = runs.every((run) => {
+                        const runTime = new Date(run.at).getTime();
+                        return runTime <= now;
+                      });
+                      return !allRunsCompleted && order.status !== "cancelled";
+                    })
+                    .map((order) => order.link.replace(/\/+$/, "").toLowerCase())
+                );
+                const createdLinks = new Set<string>();
+                let successCount = 0;
+                let failedCount = 0;
+                let lastError = "";
 
-        // Calculate totals
-        function calculateTotals() {
-            let total = 0;
-            document.querySelectorAll('.item-amount').forEach(input => {
-                total += parseFloat(input.value) || 0;
-            });
+                for (let index = 0; index < targets.length; index += 1) {
+                  const trimmedUrl = targets[index];
+                  const normalizedTarget = trimmedUrl.replace(/\/+$/, "").toLowerCase();
+                  if (activeLinks.has(normalizedTarget) || createdLinks.has(normalizedTarget)) {
+                    failedCount += 1;
+                    lastError = "Warning: An active mission with the same link already exists.";
+                    continue;
+                  }
 
-            const advance = parseFloat(document.getElementById('advancePaid').value) || 0;
-            const balance = total - advance;
+                  try {
+                    const result = await createSmmOrder({
+                      name: orderName.trim() || undefined,
+                      apiUrl: selectedApi.url,
+                      apiKey: selectedApi.key,
+                      link: trimmedUrl,
+                      services: servicesPayload,
+                    });
 
-            document.getElementById('totalAmount').textContent = '₹' + total.toFixed(2);
-            document.getElementById('advancePaidDisplay').textContent = '₹' + advance.toFixed(2);
-            document.getElementById('balanceDue').textContent = '₹' + balance.toFixed(2);
-        }
+                    const order: CreatedOrder = {
+                      id: createOrderId(),
+                      name: orderName.trim(),
+                      schedulerOrderId: result.schedulerOrderId,
+                      smmOrderId: result.orderId ?? "Scheduled",
+                      link: trimmedUrl,
+                      totalViews: quantity,
+                      startDelayHours,
+                      patternType: safePlan.patternType,
+                      patternName: safePlan.patternName,
+                      runs: safePlan?.runs || [],
+                      engagement: {
+                        likes: totalLikes,
+                        shares: totalShares,
+                        saves: totalSaves,
+                      },
+                      serviceId: viewsServiceId,
+                      selectedAPI: selectedApi.name,
+                      selectedBundle: selectedBundle.name,
+                      status: result.status === "completed" ? "completed" : "running",
+                      completedRuns: typeof result.completedRuns === "number" ? result.completedRuns : 0,
+                      runStatuses: (safePlan?.runs || []).map(() => "pending"),
+                      createdAt: new Date().toISOString(),
+                      lastUpdatedAt: new Date().toISOString(),
+                    };
 
-        // Initialize listeners
-        document.querySelectorAll('.item-entry').forEach(item => {
-            attachItemListeners(item);
-        });
+                    if (!order.name) {
+                      order.name = `Mission #${order.id}`;
+                    } else if (targets.length > 1) {
+                      order.name = `${order.name} #${index + 1}`;
+                    }
 
-        document.getElementById('advancePaid').addEventListener('input', calculateTotals);
+                    onCreateOrder(order);
+                    createdLinks.add(normalizedTarget);
+                    successCount += 1;
+                  } catch (error) {
+                    const message = error instanceof Error ? error.message : "Failed to create mission";
+                    const failedOrder: CreatedOrder = {
+                      id: createOrderId(),
+                      name: orderName.trim() || "",
+                      smmOrderId: "N/A",
+                      link: trimmedUrl,
+                      totalViews: quantity,
+                      startDelayHours,
+                      patternType: safePlan.patternType,
+                      patternName: safePlan.patternName,
+                      runs: safePlan?.runs || [],
+                      engagement: {
+                        likes: totalLikes,
+                        shares: totalShares,
+                        saves: totalSaves,
+                      },
+                      serviceId: viewsServiceId,
+                      selectedAPI: selectedApi.name,
+                      selectedBundle: selectedBundle.name,
+                      status: "failed",
+                      completedRuns: 0,
+                      runStatuses: (safePlan?.runs || []).map((_, runIndex) => (runIndex === 0 ? "cancelled" : "pending")),
+                      runErrors: (safePlan?.runs || []).map((_, runIndex) => (runIndex === 0 ? message : "")),
+                      errorMessage: message,
+                      createdAt: new Date().toISOString(),
+                      lastUpdatedAt: new Date().toISOString(),
+                    };
+                    if (!failedOrder.name) {
+                      failedOrder.name = `Mission #${failedOrder.id}`;
+                    } else if (targets.length > 1) {
+                      failedOrder.name = `${failedOrder.name} #${index + 1}`;
+                    }
+                    onCreateOrder(failedOrder);
+                    failedCount += 1;
+                    lastError = message;
+                  }
+                }
 
-        // Form submission
-        document.getElementById('orderForm').addEventListener('submit', function(e) {
-            e.preventDefault();
+                if (failedCount > 0 && successCount === 0) {
+                  setCreateError(lastError || "Failed to create missions.");
+                  setCreateSuccess("");
+                  return;
+                }
 
-            // Collect items
-            const items = [];
-            document.querySelectorAll('.item-entry').forEach(entry => {
-                items.push({
-                    description: entry.querySelector('.item-description').value,
-                    quantity: entry.querySelector('.item-quantity').value,
-                    unit: entry.querySelector('.item-unit').value,
-                    rate: entry.querySelector('.item-rate').value,
-                    amount: entry.querySelector('.item-amount').value
-                });
-            });
+                const successLabel =
+                  targets.length > 1
+                    ? `Processed ${targets.length} missions. Success: ${successCount}, Failed: ${failedCount}`
+                    : "Mission Deployed Successfully";
+                setCreateSuccess(successLabel);
+                if (failedCount > 0) {
+                  setCreateError(`Some missions failed. Last error: ${lastError}`);
+                }
+                onNavigateToOrders(successLabel);
+              } finally {
+                setIsCreatingOrder(false);
+              }
+            }}
+            className="whitespace-nowrap rounded-lg border border-yellow-500/50 bg-yellow-500/20 px-5 py-2 text-sm font-semibold text-yellow-300 transition hover:bg-yellow-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isCreatingOrder ? "Deploying..." : "🦇 Deploy Mission"}
+          </button>
+        </div>
+      </div>
 
-            // Create order object
-            const order = {
-                id: Date.now(),
-                customerName: document.getElementById('customerName').value,
-                mobileNumber: document.getElementById('mobileNumber').value,
-                orderDate: document.getElementById('orderDate').value,
-                deliveryDate: document.getElementById('deliveryDate').value,
-                trialDate: document.getElementById('trialDate').value,
-                urgency: document.getElementById('urgency').value,
-                address: document.getElementById('address').value,
-                items: items,
-                totalAmount: document.getElementById('totalAmount').textContent,
-                advancePaid: document.getElementById('advancePaid').value,
-                balanceDue: document.getElementById('balanceDue').textContent,
-                paymentMethod: document.getElementById('paymentMethod').value,
-                measurementDone: document.getElementById('measurementDone').checked,
-                readyToDeliver: document.getElementById('readyToDeliver').checked,
-                notes: document.getElementById('notes').value,
-                status: 'Pending'
-            };
-
-            // Save to localStorage
-            let orders = JSON.parse(localStorage.getItem('orders')) || [];
-            orders.push(order);
-            localStorage.setItem('orders', JSON.stringify(orders));
-
-            alert('✅ Order created successfully!');
-            window.location.href = 'dashboard.html';
-        });
-    </script>
-</body>
-</html>
+      {/* Error/Success Messages - Compact */}
+      {(createError || createSuccess) && (
+        <div className="flex flex-wrap gap-2">
+          {createError && <p className="text-xs text-red-400">❌ {createError}</p>}
+          {createSuccess && <p className="text-xs text-emerald-400">✅ {createSuccess}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
