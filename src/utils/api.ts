@@ -131,6 +131,7 @@ export async function createSmmOrder(payload: CreateOrderPayload): Promise<Creat
     apiUrl: payload.apiUrl,
     services: Object.keys(payload.services),
     link: payload.link,
+    runsCount: Object.values(payload.services).reduce((sum, s) => sum + (s?.runs?.length || 0), 0),
   });
 
   let response: Response;
@@ -173,7 +174,9 @@ export async function createSmmOrder(payload: CreateOrderPayload): Promise<Creat
       ? String(payloadObject.schedulerOrderId)
       : undefined;
 
-  // Some providers/backends return HTTP 200 with { error: "..." }.
+  // 🔧 DEBUG: Log schedulerOrderId
+  console.info("[Create Order] schedulerOrderId received:", schedulerOrderId);
+
   if (explicitError) {
     console.error("[Create Order] API returned error", {
       status: response.status,
@@ -191,12 +194,12 @@ export async function createSmmOrder(payload: CreateOrderPayload): Promise<Creat
     throw new Error(`Order request failed (HTTP ${response.status})`);
   }
 
-  // Scheduler backends can return HTTP 200 + { success: true, message: "..." } without order ids.
   if (isExplicitSuccess) {
     console.info("[Create Order] Response received", {
       success: true,
       message: successMessage,
       orderId: resolvedOrderId !== undefined && resolvedOrderId !== null ? String(resolvedOrderId) : undefined,
+      schedulerOrderId,
     });
     return {
       success: true,
@@ -223,6 +226,7 @@ export async function createSmmOrder(payload: CreateOrderPayload): Promise<Creat
 
   console.info("[Create Order] Response received", {
     orderId: String(resolvedOrderId),
+    schedulerOrderId,
   });
 
   return {
@@ -236,44 +240,125 @@ export async function createSmmOrder(payload: CreateOrderPayload): Promise<Creat
   };
 }
 
+// 🔧 IMPROVED: Better cancel handling with retries and detailed logging
 export async function updateOrderControl(payload: {
   schedulerOrderId: string;
   action: "pause" | "resume" | "cancel";
 }): Promise<OrderControlResult> {
   const endpoint = `${BACKEND_BASE_URL.replace(/\/$/, "")}/api/order/control`;
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
+  
+  console.info(`[Order Control] Sending ${payload.action.toUpperCase()} request`, {
+    endpoint,
+    schedulerOrderId: payload.schedulerOrderId,
+    action: payload.action,
   });
 
-  const responseText = await response.text();
-  let parsed: unknown = null;
-  try {
-    parsed = JSON.parse(responseText);
-  } catch {
-    parsed = null;
+  // Retry logic for cancel action (important!)
+  const maxRetries = payload.action === "cancel" ? 3 : 1;
+  let lastError: Error | null = null;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const responseText = await response.text();
+      let parsed: unknown = null;
+      try {
+        parsed = JSON.parse(responseText);
+      } catch {
+        parsed = null;
+      }
+
+      const payloadObject = parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
+
+      console.info(`[Order Control] Response (attempt ${attempt}/${maxRetries})`, {
+        status: response.status,
+        success: payloadObject?.success,
+        resultStatus: payloadObject?.status,
+        completedRuns: payloadObject?.completedRuns,
+        runStatuses: payloadObject?.runStatuses,
+        raw: payloadObject,
+      });
+
+      if (!response.ok || payloadObject?.success === false) {
+        const errorMsg = String(payloadObject?.error || `Order control failed (HTTP ${response.status})`);
+        console.error(`[Order Control] Failed (attempt ${attempt}/${maxRetries})`, errorMsg);
+        
+        if (attempt < maxRetries) {
+          console.info(`[Order Control] Retrying in 1 second...`);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          continue;
+        }
+        
+        throw new Error(errorMsg);
+      }
+
+      // 🔧 Verify cancel was successful
+      if (payload.action === "cancel") {
+        const resultStatus = payloadObject?.status;
+        if (resultStatus !== "cancelled") {
+          console.warn(`[Order Control] Cancel requested but status is '${resultStatus}', expected 'cancelled'`);
+        }
+      }
+
+      return {
+        success: true,
+        status:
+          payloadObject?.status === "running" ||
+          payloadObject?.status === "paused" ||
+          payloadObject?.status === "cancelled" ||
+          payloadObject?.status === "completed"
+            ? payloadObject.status
+            : undefined,
+        completedRuns: typeof payloadObject?.completedRuns === "number" ? payloadObject.completedRuns : undefined,
+        runStatuses: Array.isArray(payloadObject?.runStatuses)
+          ? (payloadObject.runStatuses as Array<"pending" | "completed" | "cancelled">)
+          : undefined,
+      };
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      console.error(`[Order Control] Error (attempt ${attempt}/${maxRetries})`, lastError.message);
+      
+      if (attempt < maxRetries) {
+        console.info(`[Order Control] Retrying in 1 second...`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
   }
 
-  const payloadObject = parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
-  if (!response.ok || payloadObject?.success === false) {
-    throw new Error(String(payloadObject?.error || `Order control failed (HTTP ${response.status})`));
-  }
+  throw lastError || new Error("Order control failed after all retries");
+}
 
+// 🔧 NEW: Batch cancel function for bulk orders
+export async function cancelMultipleOrders(schedulerOrderIds: string[]): Promise<{
+  success: boolean;
+  results: Array<{ schedulerOrderId: string; success: boolean; error?: string }>;
+}> {
+  console.info(`[Batch Cancel] Cancelling ${schedulerOrderIds.length} orders...`);
+  
+  const results: Array<{ schedulerOrderId: string; success: boolean; error?: string }> = [];
+  
+  for (const schedulerOrderId of schedulerOrderIds) {
+    try {
+      await updateOrderControl({ schedulerOrderId, action: "cancel" });
+      results.push({ schedulerOrderId, success: true });
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      results.push({ schedulerOrderId, success: false, error: errorMsg });
+    }
+  }
+  
+  const successCount = results.filter(r => r.success).length;
+  console.info(`[Batch Cancel] Completed: ${successCount}/${schedulerOrderIds.length} successful`);
+  
   return {
-    success: true,
-    status:
-      payloadObject?.status === "running" ||
-      payloadObject?.status === "paused" ||
-      payloadObject?.status === "cancelled" ||
-      payloadObject?.status === "completed"
-        ? payloadObject.status
-        : undefined,
-    completedRuns: typeof payloadObject?.completedRuns === "number" ? payloadObject.completedRuns : undefined,
-    runStatuses: Array.isArray(payloadObject?.runStatuses)
-      ? (payloadObject.runStatuses as Array<"pending" | "completed" | "cancelled">)
-      : undefined,
+    success: successCount === schedulerOrderIds.length,
+    results,
   };
 }
