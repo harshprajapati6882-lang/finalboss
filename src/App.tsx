@@ -134,7 +134,15 @@ function hydrateBundles(bundles: Bundle[]): Bundle[] {
 }
 
 export default function App() {
-  const [activePage, setActivePage] = useState<NavKey>("new-order");
+  // 🦇 FIX: Load saved page from localStorage
+  const [activePage, setActivePage] = useState<NavKey>(() => {
+    const saved = localStorage.getItem("dev-smm-active-page");
+    if (saved === "dashboard" || saved === "new-order" || saved === "orders" || saved === "apis" || saved === "bundles") {
+      return saved;
+    }
+    return "new-order";
+  });
+
   const [ordersNotice, setOrdersNotice] = useState("");
   const [orders, setOrders] = useState<CreatedOrder[]>(() => hydrateOrderDates(readStorage<CreatedOrder[]>("dev-smm-orders", [])));
   const [apis, setApis] = useState<ApiPanel[]>(() => hydrateApis(readStorage<ApiPanel[]>("dev-smm-apis", [])));
@@ -143,8 +151,14 @@ export default function App() {
   const [fetchingApiId, setFetchingApiId] = useState<string | null>(null);
   const [controllingOrderId, setControllingOrderId] = useState<string | null>(null);
   
-  // 🦇 NEW: Random quote on each visit/refresh
+  // 🦇 Random quote on each visit/refresh
   const [batmanQuote] = useState(() => getRandomQuote());
+
+  // 🦇 FIX: Helper function to change page and save to localStorage
+  const navigateToPage = useCallback((page: NavKey) => {
+    setActivePage(page);
+    localStorage.setItem("dev-smm-active-page", page);
+  }, []);
 
   const persistOrders = useCallback((next: CreatedOrder[]) => {
     setOrders(next);
@@ -172,7 +186,7 @@ export default function App() {
           onCreateOrder={(order) => persistOrders([order, ...orders])}
           onNavigateToOrders={(notice) => {
             if (notice) setOrdersNotice(notice);
-            setActivePage("orders");
+            navigateToPage("orders");
           }}
         />
       );
@@ -188,7 +202,7 @@ export default function App() {
           controllingOrderId={controllingOrderId}
           onCloneOrder={(order) => {
             setCloneSourceOrder(order);
-            setActivePage("new-order");
+            navigateToPage("new-order");
           }}
           onControlOrder={async (order, action) => {
             const applyLocalUpdate = (nextStatus: CreatedOrder["status"]) => {
@@ -365,7 +379,7 @@ export default function App() {
         }}
       />
     );
-  }, [activePage, apis, bundles, orders, fetchingApiId, controllingOrderId, ordersNotice, cloneSourceOrder]);
+  }, [activePage, apis, bundles, orders, fetchingApiId, controllingOrderId, ordersNotice, cloneSourceOrder, navigateToPage, persistOrders, persistApis, persistBundles]);
 
   return (
     <div className="min-h-screen bg-black text-gray-100">
@@ -398,7 +412,7 @@ export default function App() {
                     if (item.key === "new-order") {
                       setCloneSourceOrder(null);
                     }
-                    setActivePage(item.key);
+                    navigateToPage(item.key);
                   }}
                   className={cn(
                     "relative flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-sm font-medium transition-all",
