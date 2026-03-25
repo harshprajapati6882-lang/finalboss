@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import type { CreatedOrder } from "../types/order";
 import { OrderCard } from "../components/OrderCard";
 
@@ -13,6 +14,18 @@ interface OrdersPageProps {
 
 type TabType = "running" | "completed" | "scheduled";
 type ViewMode = "rows" | "columns";
+
+// Grouped order type for batch orders
+interface GroupedOrder {
+  id: string;
+  batchId: string | null;
+  name: string;
+  orders: CreatedOrder[];
+  isBatch: boolean;
+  totalViews: number;
+  linksCount: number;
+  createdAt: string;
+}
 
 // Batman Status Colors
 const STATUS_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
@@ -43,7 +56,7 @@ export function OrdersPage({
   const [query, setQuery] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("rows");
   const [activeTab, setActiveTab] = useState<TabType>("running");
-  const [openedOrderId, setOpenedOrderId] = useState<string | null>(null);
+  const [openedGroupId, setOpenedGroupId] = useState<string | null>(null);
 
   function getProgress(order: CreatedOrder) {
     const safeRuns = order.runs || [];
@@ -63,6 +76,28 @@ export function OrdersPage({
       percent: Math.round((completed / totalRuns) * 100),
       completed,
       total: totalRuns,
+    };
+  }
+
+  function getGroupProgress(group: GroupedOrder) {
+    const allRuns = group.orders.flatMap(o => o.runs || []);
+    const totalRuns = allRuns.length;
+    if (totalRuns === 0) return { percent: 0, completed: 0, total: 0 };
+    
+    const now = Date.now();
+    let completedCount = 0;
+    
+    group.orders.forEach(order => {
+      const progress = getProgress(order);
+      completedCount += progress.completed;
+    });
+    
+    const totalRunsInGroup = group.orders.reduce((sum, o) => sum + (o.runs?.length || 0), 0);
+    
+    return {
+      percent: totalRunsInGroup > 0 ? Math.round((completedCount / totalRunsInGroup) * 100) : 0,
+      completed: completedCount,
+      total: totalRunsInGroup,
     };
   }
 
@@ -94,8 +129,30 @@ export function OrdersPage({
     return order.status;
   }
 
+  function getGroupStatus(group: GroupedOrder): string {
+    const statuses = group.orders.map(o => getRealStatus(o));
+    
+    if (statuses.every(s => s === "completed")) return "completed";
+    if (statuses.every(s => s === "cancelled")) return "cancelled";
+    if (statuses.every(s => s === "scheduled")) return "scheduled";
+    if (statuses.some(s => s === "failed")) return "failed";
+    if (statuses.some(s => s === "paused")) return "paused";
+    if (statuses.some(s => s === "running")) return "running";
+    
+    return "running";
+  }
+
   function getOrderCategory(order: CreatedOrder): TabType {
     const status = getRealStatus(order);
+    
+    if (status === "completed") return "completed";
+    if (status === "scheduled") return "scheduled";
+    
+    return "running";
+  }
+
+  function getGroupCategory(group: GroupedOrder): TabType {
+    const status = getGroupStatus(group);
     
     if (status === "completed") return "completed";
     if (status === "scheduled") return "scheduled";
@@ -131,58 +188,94 @@ export function OrdersPage({
     return "in <1m";
   }
 
-  const categorizedOrders = useMemo(() => {
-    const running: CreatedOrder[] = [];
-    const completed: CreatedOrder[] = [];
-    const scheduled: CreatedOrder[] = [];
-
+  // Group orders by batchId
+  const groupedOrders = useMemo(() => {
+    const groups: Map<string, GroupedOrder> = new Map();
+    
     orders.forEach((order) => {
-      const category = getOrderCategory(order);
-      if (category === "running") running.push(order);
-      else if (category === "completed") completed.push(order);
-      else scheduled.push(order);
+      const groupKey = order.batchId || order.id; // Use batchId or individual id
+      
+      if (groups.has(groupKey)) {
+        const existing = groups.get(groupKey)!;
+        existing.orders.push(order);
+        existing.totalViews += order.totalViews;
+        existing.linksCount += 1;
+      } else {
+        groups.set(groupKey, {
+          id: groupKey,
+          batchId: order.batchId || null,
+          name: order.name,
+          orders: [order],
+          isBatch: !!order.batchId,
+          totalViews: order.totalViews,
+          linksCount: 1,
+          createdAt: order.createdAt,
+        });
+      }
+    });
+    
+    // Sort orders within each group by batchIndex
+    groups.forEach((group) => {
+      group.orders.sort((a, b) => (a.batchIndex || 0) - (b.batchIndex || 0));
+    });
+    
+    return Array.from(groups.values());
+  }, [orders]);
+
+  const categorizedGroups = useMemo(() => {
+    const running: GroupedOrder[] = [];
+    const completed: GroupedOrder[] = [];
+    const scheduled: GroupedOrder[] = [];
+
+    groupedOrders.forEach((group) => {
+      const category = getGroupCategory(group);
+      if (category === "running") running.push(group);
+      else if (category === "completed") completed.push(group);
+      else scheduled.push(group);
     });
 
     running.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     completed.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    scheduled.sort((a, b) => {
-      const nextA = getNextRunTime(a);
-      const nextB = getNextRunTime(b);
-      if (!nextA || !nextB) return 0;
-      return nextA.getTime() - nextB.getTime();
-    });
+    scheduled.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
     return { running, completed, scheduled };
-  }, [orders]);
+  }, [groupedOrders]);
 
-  const filteredOrders = useMemo(() => {
-    const ordersForTab = categorizedOrders[activeTab];
+  const filteredGroups = useMemo(() => {
+    const groupsForTab = categorizedGroups[activeTab];
     const value = query.trim().toLowerCase();
     
-    if (!value) return ordersForTab;
+    if (!value) return groupsForTab;
     
-    return ordersForTab.filter(
-      (order) =>
-        (order.name || "").toLowerCase().includes(value) ||
-        (order.link || "").toLowerCase().includes(value) ||
+    return groupsForTab.filter((group) =>
+      group.name.toLowerCase().includes(value) ||
+      group.orders.some(order => 
+        order.link.toLowerCase().includes(value) ||
         order.id.toLowerCase().includes(value)
+      )
     );
-  }, [categorizedOrders, activeTab, query]);
+  }, [categorizedGroups, activeTab, query]);
+
+  // Get opened group
+  const openedGroup = useMemo(
+    () => groupedOrders.find((group) => group.id === openedGroupId) ?? null,
+    [groupedOrders, openedGroupId]
+  );
 
   useEffect(() => {
-    if (!openedOrderId) return;
-    const stillExists = orders.some((order) => order.id === openedOrderId);
-    if (!stillExists) setOpenedOrderId(null);
-  }, [orders, openedOrderId]);
-
-  const openedOrder = useMemo(
-    () => orders.find((order) => order.id === openedOrderId) ?? null,
-    [orders, openedOrderId]
-  );
+    if (!openedGroupId) return;
+    const stillExists = groupedOrders.some((group) => group.id === openedGroupId);
+    if (!stillExists) setOpenedGroupId(null);
+  }, [groupedOrders, openedGroupId]);
 
   function toShortLink(link: string) {
     if (!link) return "-";
     return link.length > 48 ? `${link.slice(0, 30)}...${link.slice(-12)}` : link;
+  }
+
+  function extractReelId(link: string) {
+    const match = link.match(/\/reel\/([^/?]+)/);
+    return match ? match[1] : link.slice(-15);
   }
 
   function StatusBadge({ status }: { status: string }) {
@@ -237,9 +330,9 @@ export function OrdersPage({
 
   function StatsSummary() {
     const stats = [
-      { label: "Active", count: categorizedOrders.running.length, color: "text-yellow-400" },
-      { label: "Completed", count: categorizedOrders.completed.length, color: "text-emerald-400" },
-      { label: "Scheduled", count: categorizedOrders.scheduled.length, color: "text-amber-400" },
+      { label: "Active", count: categorizedGroups.running.length, color: "text-yellow-400" },
+      { label: "Completed", count: categorizedGroups.completed.length, color: "text-emerald-400" },
+      { label: "Scheduled", count: categorizedGroups.scheduled.length, color: "text-amber-400" },
     ];
 
     return (
@@ -257,24 +350,36 @@ export function OrdersPage({
     );
   }
 
-  function OrderTableRow({ order }: { order: CreatedOrder }) {
-    const progress = getProgress(order);
-    const status = getRealStatus(order);
-    const nextRun = getNextRunTime(order);
+  function GroupTableRow({ group }: { group: GroupedOrder }) {
+    const progress = getGroupProgress(group);
+    const status = getGroupStatus(group);
 
     return (
       <tr
-        onClick={() => setOpenedOrderId(order.id)}
+        onClick={() => setOpenedGroupId(group.id)}
         className="cursor-pointer border-t border-gray-800 transition hover:bg-yellow-500/5"
       >
         <td className="px-4 py-3">
-          <p className="font-medium text-white">{order.name || `Mission #${order.id.slice(0, 8)}`}</p>
-          <p className="mt-0.5 text-[11px] text-gray-600 font-mono">{order.id}</p>
+          <div className="flex items-center gap-2">
+            <p className="font-medium text-white">{group.name || `Mission #${group.id.slice(0, 8)}`}</p>
+            {group.isBatch && (
+              <span className="rounded-full bg-blue-500/20 border border-blue-500/30 px-2 py-0.5 text-[10px] text-blue-300">
+                📦 {group.linksCount} links
+              </span>
+            )}
+          </div>
+          <p className="mt-0.5 text-[11px] text-gray-600 font-mono">
+            {group.isBatch ? group.batchId?.slice(0, 15) : group.orders[0]?.id}
+          </p>
         </td>
         <td className="max-w-[220px] px-4 py-3">
-          <p className="truncate text-gray-500" title={order.link}>
-            {toShortLink(order.link)}
-          </p>
+          {group.isBatch ? (
+            <p className="text-gray-500 text-xs">{group.linksCount} Instagram links</p>
+          ) : (
+            <p className="truncate text-gray-500" title={group.orders[0]?.link}>
+              {toShortLink(group.orders[0]?.link || "")}
+            </p>
+          )}
         </td>
         <td className="px-4 py-3">
           <StatusBadge status={status} />
@@ -290,53 +395,61 @@ export function OrdersPage({
             <ProgressBar percent={progress.percent} />
           </div>
         </td>
-        {activeTab === "scheduled" && (
-          <td className="px-4 py-3">
-            {nextRun && (
-              <div className="text-xs">
-                <p className="text-amber-400">{formatRelativeTime(nextRun)}</p>
-                <p className="mt-0.5 text-gray-600">{nextRun.toLocaleString()}</p>
-              </div>
-            )}
-          </td>
-        )}
         <td className="px-4 py-3 text-gray-600 text-xs">
-          {new Date(order.createdAt).toLocaleDateString()}
-          <span className="block text-gray-700">{new Date(order.createdAt).toLocaleTimeString()}</span>
+          {new Date(group.createdAt).toLocaleDateString()}
+          <span className="block text-gray-700">{new Date(group.createdAt).toLocaleTimeString()}</span>
         </td>
       </tr>
     );
   }
 
-  function OrderCardItem({ order }: { order: CreatedOrder }) {
-    const progress = getProgress(order);
-    const status = getRealStatus(order);
-    const nextRun = getNextRunTime(order);
+  function GroupCardItem({ group }: { group: GroupedOrder }) {
+    const progress = getGroupProgress(group);
+    const status = getGroupStatus(group);
 
     return (
       <button
         type="button"
-        onClick={() => setOpenedOrderId(order.id)}
-        className="group rounded-xl border border-yellow-500/20 bg-gradient-to-br from-gray-900 to-black p-4 text-left transition-all hover:border-yellow-500/40 hover:shadow-lg hover:shadow-yellow-500/5"
+        onClick={() => setOpenedGroupId(group.id)}
+        className="group rounded-xl border border-yellow-500/20 bg-gradient-to-br from-gray-900 to-black p-4 text-left transition-all hover:border-yellow-500/40 hover:shadow-lg hover:shadow-yellow-500/5 w-full"
       >
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold text-white group-hover:text-yellow-100">
-              {order.name || `Mission #${order.id.slice(0, 8)}`}
+            <div className="flex items-center gap-2">
+              <p className="truncate text-sm font-semibold text-white group-hover:text-yellow-100">
+                {group.name || `Mission #${group.id.slice(0, 8)}`}
+              </p>
+              {group.isBatch && (
+                <span className="rounded-full bg-blue-500/20 border border-blue-500/30 px-1.5 py-0.5 text-[9px] text-blue-300">
+                  📦 {group.linksCount}
+                </span>
+              )}
+            </div>
+            <p className="mt-1 truncate text-xs text-gray-600 font-mono">
+              {group.isBatch ? `Batch: ${group.linksCount} links` : group.orders[0]?.id}
             </p>
-            <p className="mt-1 truncate text-xs text-gray-600 font-mono">{order.id}</p>
           </div>
           <StatusBadge status={status} />
         </div>
 
-        <p className="mt-3 truncate text-xs text-gray-500" title={order.link}>
-          {toShortLink(order.link)}
-        </p>
+        {!group.isBatch && (
+          <p className="mt-3 truncate text-xs text-gray-500" title={group.orders[0]?.link}>
+            {toShortLink(group.orders[0]?.link || "")}
+          </p>
+        )}
 
-        {activeTab === "scheduled" && nextRun && (
-          <div className="mt-3 flex items-center gap-2 rounded-lg bg-amber-500/10 px-2.5 py-1.5">
-            <span className="text-amber-400">⏱</span>
-            <span className="text-xs text-amber-300">{formatRelativeTime(nextRun)}</span>
+        {group.isBatch && (
+          <div className="mt-3 flex flex-wrap gap-1">
+            {group.orders.slice(0, 3).map((order, idx) => (
+              <span key={order.id} className="rounded bg-gray-800 px-1.5 py-0.5 text-[9px] text-gray-400">
+                {extractReelId(order.link)}
+              </span>
+            ))}
+            {group.orders.length > 3 && (
+              <span className="rounded bg-gray-800 px-1.5 py-0.5 text-[9px] text-gray-500">
+                +{group.orders.length - 3} more
+              </span>
+            )}
           </div>
         )}
 
@@ -352,9 +465,331 @@ export function OrdersPage({
 
         <div className="mt-3 flex items-center justify-between text-[11px] text-gray-600">
           <span>Deployed</span>
-          <span>{new Date(order.createdAt).toLocaleDateString()}</span>
+          <span>{new Date(group.createdAt).toLocaleDateString()}</span>
         </div>
       </button>
+    );
+  }
+
+  // Individual Link Card for Batch Orders Popup
+  function IndividualLinkCard({ order, index }: { order: CreatedOrder; index: number }) {
+    const progress = getProgress(order);
+    const status = getRealStatus(order);
+    const isControlling = controllingOrderId === order.id;
+
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: index * 0.05 }}
+        className="rounded-xl border border-gray-800 bg-gradient-to-br from-gray-900 to-black p-4"
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="flex items-center justify-center h-6 w-6 rounded-full bg-yellow-500/20 text-xs font-bold text-yellow-400">
+                {index + 1}
+              </span>
+              <a
+                href={order.link}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="truncate text-sm text-blue-400 hover:text-blue-300 hover:underline"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {toShortLink(order.link)}
+              </a>
+            </div>
+            <p className="mt-1 ml-8 text-[10px] text-gray-600 font-mono">{order.id}</p>
+          </div>
+          <StatusBadge status={status} />
+        </div>
+
+        {/* Progress */}
+        <div className="mt-3 ml-8">
+          <div className="flex items-center justify-between text-xs mb-1">
+            <span className="text-gray-600">
+              {progress.completed}/{progress.total} runs
+            </span>
+            <span className="text-gray-500">{progress.percent}%</span>
+          </div>
+          <ProgressBar percent={progress.percent} size="small" />
+        </div>
+
+        {/* Stats */}
+        <div className="mt-3 ml-8 grid grid-cols-4 gap-2">
+          <div className="rounded-md bg-black/50 px-2 py-1 text-center">
+            <p className="text-xs font-medium text-yellow-400">{(order.totalViews / 1000).toFixed(0)}k</p>
+            <p className="text-[9px] text-gray-600">Views</p>
+          </div>
+          <div className="rounded-md bg-black/50 px-2 py-1 text-center">
+            <p className="text-xs font-medium text-pink-400">{order.engagement.likes}</p>
+            <p className="text-[9px] text-gray-600">Likes</p>
+          </div>
+          <div className="rounded-md bg-black/50 px-2 py-1 text-center">
+            <p className="text-xs font-medium text-blue-400">{order.engagement.shares}</p>
+            <p className="text-[9px] text-gray-600">Shares</p>
+          </div>
+          <div className="rounded-md bg-black/50 px-2 py-1 text-center">
+            <p className="text-xs font-medium text-purple-400">{order.engagement.saves}</p>
+            <p className="text-[9px] text-gray-600">Saves</p>
+          </div>
+        </div>
+
+        {/* Individual Controls */}
+        <div className="mt-3 ml-8 flex items-center gap-2 flex-wrap">
+          {/* Pause/Resume */}
+          {status === "running" && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onControlOrder(order, "pause");
+              }}
+              disabled={isControlling}
+              className="flex items-center gap-1 rounded-md border border-orange-500/30 bg-orange-500/10 px-2 py-1 text-[10px] font-medium text-orange-300 hover:bg-orange-500/20 transition disabled:opacity-50"
+            >
+              {isControlling ? "⏳" : "⏸️"} Pause
+            </button>
+          )}
+          
+          {status === "paused" && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onControlOrder(order, "resume");
+              }}
+              disabled={isControlling}
+              className="flex items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[10px] font-medium text-emerald-300 hover:bg-emerald-500/20 transition disabled:opacity-50"
+            >
+              {isControlling ? "⏳" : "▶️"} Resume
+            </button>
+          )}
+
+          {/* Cancel */}
+          {status !== "completed" && status !== "cancelled" && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (window.confirm(`Cancel this order?\n\nLink: ${order.link.slice(0, 50)}...`)) {
+                  onControlOrder(order, "cancel");
+                }
+              }}
+              disabled={isControlling}
+              className="flex items-center gap-1 rounded-md border border-red-500/30 bg-red-500/10 px-2 py-1 text-[10px] font-medium text-red-300 hover:bg-red-500/20 transition disabled:opacity-50"
+            >
+              {isControlling ? "⏳" : "❌"} Cancel
+            </button>
+          )}
+
+          {/* Clone */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onCloneOrder(order);
+            }}
+            className="flex items-center gap-1 rounded-md border border-gray-600 bg-black px-2 py-1 text-[10px] font-medium text-gray-400 hover:text-white hover:border-gray-500 transition"
+          >
+            📋 Clone
+          </button>
+
+          {/* Open Link */}
+          <a
+            href={order.link}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="flex items-center gap-1 rounded-md border border-gray-600 bg-black px-2 py-1 text-[10px] font-medium text-gray-400 hover:text-white hover:border-gray-500 transition"
+          >
+            🔗 Open
+          </a>
+        </div>
+
+        {/* Error Message */}
+        {order.errorMessage && (
+          <div className="mt-2 ml-8 rounded-md bg-red-500/10 border border-red-500/20 px-2 py-1">
+            <p className="text-[10px] text-red-400">❌ {order.errorMessage}</p>
+          </div>
+        )}
+      </motion.div>
+    );
+  }
+
+  // Batch Order Detail Popup
+  function BatchDetailPopup({ group }: { group: GroupedOrder }) {
+    const overallProgress = getGroupProgress(group);
+    const overallStatus = getGroupStatus(group);
+
+    const statusCounts = useMemo(() => {
+      const counts: Record<string, number> = {};
+      group.orders.forEach((order) => {
+        const status = getRealStatus(order);
+        counts[status] = (counts[status] || 0) + 1;
+      });
+      return counts;
+    }, [group.orders]);
+
+    return (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm px-4 py-6"
+        onClick={() => setOpenedGroupId(null)}
+      >
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="max-h-[92vh] w-full max-w-4xl overflow-hidden rounded-2xl border border-yellow-500/30 bg-black shadow-2xl flex flex-col"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="border-b border-gray-800 px-5 py-4 flex-shrink-0">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-lg font-semibold text-yellow-400">{group.name}</h3>
+                  {group.isBatch && (
+                    <span className="rounded-full bg-blue-500/20 border border-blue-500/30 px-2 py-0.5 text-xs text-blue-300">
+                      📦 Bulk Order
+                    </span>
+                  )}
+                </div>
+                <p className="mt-0.5 text-xs text-gray-600 font-mono">{group.batchId || group.id}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOpenedGroupId(null)}
+                className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-4 py-2 text-sm text-yellow-300 transition hover:bg-yellow-500/20"
+              >
+                ✕ Close
+              </button>
+            </div>
+
+            {/* Overall Stats */}
+            <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="rounded-lg bg-gray-900 px-3 py-2 text-center">
+                <p className="text-xl font-bold text-yellow-400">{group.linksCount}</p>
+                <p className="text-[10px] text-gray-500">Total Links</p>
+              </div>
+              <div className="rounded-lg bg-gray-900 px-3 py-2 text-center">
+                <p className="text-xl font-bold text-yellow-400">{(group.totalViews / 1000).toFixed(0)}k</p>
+                <p className="text-[10px] text-gray-500">Total Views</p>
+              </div>
+              <div className="rounded-lg bg-gray-900 px-3 py-2 text-center">
+                <p className="text-xl font-bold text-emerald-400">{overallProgress.percent}%</p>
+                <p className="text-[10px] text-gray-500">Progress</p>
+              </div>
+              <div className="rounded-lg bg-gray-900 px-3 py-2 text-center">
+                <StatusBadge status={overallStatus} />
+              </div>
+            </div>
+
+            {/* Status Summary */}
+            <div className="mt-3 flex flex-wrap gap-2">
+              {Object.entries(statusCounts).map(([status, count]) => (
+                <div key={status} className="flex items-center gap-1 text-xs">
+                  <span className={`h-2 w-2 rounded-full ${STATUS_COLORS[status]?.dot || 'bg-gray-500'}`} />
+                  <span className="text-gray-400">{count} {status}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Bulk Actions */}
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                onClick={() => {
+                  if (window.confirm(`Pause ALL ${group.orders.filter(o => getRealStatus(o) === 'running').length} running orders?`)) {
+                    group.orders.forEach((order) => {
+                      if (getRealStatus(order) === 'running') {
+                        onControlOrder(order, 'pause');
+                      }
+                    });
+                  }
+                }}
+                className="flex items-center gap-1 rounded-lg border border-orange-500/30 bg-orange-500/10 px-3 py-1.5 text-xs font-medium text-orange-300 hover:bg-orange-500/20 transition"
+              >
+                ⏸️ Pause All Running
+              </button>
+              <button
+                onClick={() => {
+                  if (window.confirm(`Resume ALL ${group.orders.filter(o => getRealStatus(o) === 'paused').length} paused orders?`)) {
+                    group.orders.forEach((order) => {
+                      if (getRealStatus(order) === 'paused') {
+                        onControlOrder(order, 'resume');
+                      }
+                    });
+                  }
+                }}
+                className="flex items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-300 hover:bg-emerald-500/20 transition"
+              >
+                ▶️ Resume All Paused
+              </button>
+              <button
+                onClick={() => {
+                  const activeCount = group.orders.filter(o => !['completed', 'cancelled'].includes(getRealStatus(o))).length;
+                  if (window.confirm(`⚠️ Cancel ALL ${activeCount} active orders?\n\nThis cannot be undone!`)) {
+                    group.orders.forEach((order) => {
+                      const status = getRealStatus(order);
+                      if (status !== 'completed' && status !== 'cancelled') {
+                        onControlOrder(order, 'cancel');
+                      }
+                    });
+                  }
+                }}
+                className="flex items-center gap-1 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-300 hover:bg-red-500/20 transition"
+              >
+                ❌ Cancel All Active
+              </button>
+            </div>
+          </div>
+
+          {/* Individual Links List */}
+          <div className="flex-1 overflow-y-auto p-5">
+            <h4 className="text-sm font-semibold text-gray-400 mb-3">
+              📋 Individual Links ({group.orders.length})
+            </h4>
+            <div className="space-y-3">
+              {group.orders.map((order, index) => (
+                <IndividualLinkCard key={order.id} order={order} index={index} />
+              ))}
+            </div>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
+  // Single Order Detail Popup (for non-batch orders)
+  function SingleOrderPopup({ order }: { order: CreatedOrder }) {
+    return (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm px-4 py-6"
+        onClick={() => setOpenedGroupId(null)}
+      >
+        <div
+          className="max-h-[92vh] w-full max-w-5xl overflow-auto rounded-2xl border border-yellow-500/30 bg-black p-5 shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="mb-4 flex items-center justify-between border-b border-gray-800 pb-4">
+            <div>
+              <h3 className="text-lg font-semibold text-yellow-400">Mission Details</h3>
+              <p className="mt-0.5 text-xs text-gray-600 font-mono">{order.id}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setOpenedGroupId(null)}
+              className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-4 py-2 text-sm text-yellow-300 transition hover:bg-yellow-500/20"
+            >
+              ✕ Close
+            </button>
+          </div>
+          <OrderCard
+            key={order.id}
+            order={order}
+            controlBusy={controllingOrderId === order.id}
+            onControl={onControlOrder}
+            onClone={onCloneOrder}
+          />
+        </div>
+      </div>
     );
   }
 
@@ -403,7 +838,7 @@ export function OrdersPage({
           {/* Tabs */}
           <div className="flex flex-wrap gap-2">
             {TABS.map((tab) => {
-              const count = categorizedOrders[tab.key].length;
+              const count = categorizedGroups[tab.key].length;
               const isActive = activeTab === tab.key;
               return (
                 <button
@@ -484,13 +919,13 @@ export function OrdersPage({
       {/* Results Info */}
       {query && (
         <p className="text-sm text-gray-600">
-          Found <span className="text-gray-400 font-medium">{filteredOrders.length}</span> missions
+          Found <span className="text-gray-400 font-medium">{filteredGroups.length}</span> missions
           matching "<span className="text-yellow-400">{query}</span>" in {activeTab}
         </p>
       )}
 
       {/* Orders Display */}
-      {filteredOrders.length === 0 ? (
+      {filteredGroups.length === 0 ? (
         <EmptyState tab={activeTab} />
       ) : viewMode === "rows" ? (
         <div className="overflow-hidden rounded-xl border border-yellow-500/20 bg-black">
@@ -499,18 +934,15 @@ export function OrdersPage({
               <thead className="bg-gray-900 text-gray-500 uppercase tracking-wider">
                 <tr>
                   <th className="px-4 py-3 font-medium">Mission</th>
-                  <th className="px-4 py-3 font-medium">Link</th>
+                  <th className="px-4 py-3 font-medium">Link(s)</th>
                   <th className="px-4 py-3 font-medium">Status</th>
                   <th className="px-4 py-3 font-medium">Progress</th>
-                  {activeTab === "scheduled" && (
-                    <th className="px-4 py-3 font-medium">Next Run</th>
-                  )}
                   <th className="px-4 py-3 font-medium">Deployed</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredOrders.map((order) => (
-                  <OrderTableRow key={order.id} order={order} />
+                {filteredGroups.map((group) => (
+                  <GroupTableRow key={group.id} group={group} />
                 ))}
               </tbody>
             </table>
@@ -518,45 +950,22 @@ export function OrdersPage({
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {filteredOrders.map((order) => (
-            <OrderCardItem key={order.id} order={order} />
+          {filteredGroups.map((group) => (
+            <GroupCardItem key={group.id} group={group} />
           ))}
         </div>
       )}
 
-      {/* Order Detail Modal */}
-      {openedOrder && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm px-4 py-6"
-          onClick={() => setOpenedOrderId(null)}
-        >
-          <div
-            className="max-h-[92vh] w-full max-w-5xl overflow-auto rounded-2xl border border-yellow-500/30 bg-black p-5 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-4 flex items-center justify-between border-b border-gray-800 pb-4">
-              <div>
-                <h3 className="text-lg font-semibold text-yellow-400">Mission Details</h3>
-                <p className="mt-0.5 text-xs text-gray-600 font-mono">{openedOrder.id}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setOpenedOrderId(null)}
-                className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-4 py-2 text-sm text-yellow-300 transition hover:bg-yellow-500/20"
-              >
-                ✕ Close
-              </button>
-            </div>
-            <OrderCard
-              key={openedOrder.id}
-              order={openedOrder}
-              controlBusy={controllingOrderId === openedOrder.id}
-              onControl={onControlOrder}
-              onClone={onCloneOrder}
-            />
-          </div>
-        </div>
-      )}
+      {/* Detail Popup */}
+      <AnimatePresence>
+        {openedGroup && (
+          openedGroup.isBatch ? (
+            <BatchDetailPopup group={openedGroup} />
+          ) : (
+            <SingleOrderPopup order={openedGroup.orders[0]} />
+          )
+        )}
+      </AnimatePresence>
     </div>
   );
 }
