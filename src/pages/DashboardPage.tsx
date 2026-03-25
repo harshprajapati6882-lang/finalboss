@@ -11,6 +11,38 @@ export function DashboardPage({ orders }: DashboardPageProps) {
   const [period, setPeriod] = useState<TimePeriod>("all");
   const [showClearConfirm, setShowClearConfirm] = useState(false);
 
+  // 🦇 FIX: Same logic as OrdersPage to determine REAL status
+  function getRealStatus(order: CreatedOrder): string {
+    const runs = order.runs || [];
+    const now = Date.now();
+
+    // Check if all runs are in the future (scheduled)
+    if (runs.length > 0) {
+      const allFuture = runs.every((run) => {
+        const runTime = run?.at instanceof Date ? run.at.getTime() : new Date(run?.at ?? now).getTime();
+        return runTime > now;
+      });
+      if (allFuture && order.status !== "cancelled" && order.status !== "paused") {
+        return "scheduled";
+      }
+    }
+
+    // Check if all runs are completed (by time)
+    if (runs.length > 0) {
+      const allCompleted = runs.every((run) => {
+        const runTime = run?.at instanceof Date ? run.at.getTime() : new Date(run?.at ?? now).getTime();
+        return runTime <= now;
+      });
+      if (allCompleted) return "completed";
+    }
+
+    if (order.status === "processing") return "running";
+    if (order.status === "pending") return "running";
+
+    return order.status;
+  }
+
+  // Filter orders by time period
   const filteredOrders = useMemo(() => {
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -28,18 +60,37 @@ export function DashboardPage({ orders }: DashboardPageProps) {
     });
   }, [orders, period]);
 
+  // 🦇 FIX: Calculate stats using getRealStatus()
   const stats = useMemo(() => {
     const total = filteredOrders.length;
-    const running = filteredOrders.filter(
-      (o) => o.status === "running" || o.status === "processing" || o.status === "paused"
-    ).length;
-    const completed = filteredOrders.filter((o) => o.status === "completed").length;
-    const failed = filteredOrders.filter((o) => o.status === "failed" || o.status === "cancelled").length;
+    
+    // Use getRealStatus for accurate counting
+    const running = filteredOrders.filter((o) => {
+      const realStatus = getRealStatus(o);
+      return realStatus === "running" || realStatus === "processing" || realStatus === "paused";
+    }).length;
+    
+    const completed = filteredOrders.filter((o) => {
+      const realStatus = getRealStatus(o);
+      return realStatus === "completed";
+    }).length;
+    
+    const failed = filteredOrders.filter((o) => {
+      const realStatus = getRealStatus(o);
+      return realStatus === "failed" || realStatus === "cancelled";
+    }).length;
+
+    const scheduled = filteredOrders.filter((o) => {
+      const realStatus = getRealStatus(o);
+      return realStatus === "scheduled";
+    }).length;
+    
     const successRate = total > 0 ? Math.round((completed / total) * 100) : 0;
 
-    return { total, running, completed, failed, successRate };
+    return { total, running, completed, failed, scheduled, successRate };
   }, [filteredOrders]);
 
+  // Calculate services breakdown
   const servicesBreakdown = useMemo(() => {
     let views = 0;
     let likes = 0;
@@ -65,6 +116,7 @@ export function DashboardPage({ orders }: DashboardPageProps) {
     };
   }, [filteredOrders]);
 
+  // Get last 7 days data for chart
   const chartData = useMemo(() => {
     const days: { label: string; count: number; date: Date }[] = [];
     const now = new Date();
@@ -92,13 +144,16 @@ export function DashboardPage({ orders }: DashboardPageProps) {
     return { days, maxCount };
   }, [orders]);
 
+  // 🦇 FIX: Recent orders with real status
   const recentOrders = useMemo(() => {
     return [...orders]
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
       .slice(0, 5);
   }, [orders]);
 
-  const getStatusColor = (status: string) => {
+  // Get status color using real status
+  const getStatusColor = (order: CreatedOrder) => {
+    const status = getRealStatus(order);
     switch (status) {
       case "running":
       case "processing":
@@ -107,6 +162,8 @@ export function DashboardPage({ orders }: DashboardPageProps) {
         return "text-emerald-400";
       case "paused":
         return "text-orange-400";
+      case "scheduled":
+        return "text-blue-400";
       case "failed":
       case "cancelled":
         return "text-red-400";
@@ -115,7 +172,8 @@ export function DashboardPage({ orders }: DashboardPageProps) {
     }
   };
 
-  const getStatusBg = (status: string) => {
+  const getStatusBg = (order: CreatedOrder) => {
+    const status = getRealStatus(order);
     switch (status) {
       case "running":
       case "processing":
@@ -124,11 +182,33 @@ export function DashboardPage({ orders }: DashboardPageProps) {
         return "bg-emerald-500/20";
       case "paused":
         return "bg-orange-500/20";
+      case "scheduled":
+        return "bg-blue-500/20";
       case "failed":
       case "cancelled":
         return "bg-red-500/20";
       default:
         return "bg-gray-500/20";
+    }
+  };
+
+  const getStatusIcon = (order: CreatedOrder) => {
+    const status = getRealStatus(order);
+    switch (status) {
+      case "running":
+      case "processing":
+        return "⚡";
+      case "completed":
+        return "✅";
+      case "paused":
+        return "⏸️";
+      case "scheduled":
+        return "📅";
+      case "failed":
+      case "cancelled":
+        return "❌";
+      default:
+        return "📦";
     }
   };
 
@@ -173,8 +253,8 @@ export function DashboardPage({ orders }: DashboardPageProps) {
         </div>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {/* Stats Cards - Now shows 5 cards including Scheduled */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         {/* Total Orders */}
         <div className="rounded-xl border border-yellow-500/20 bg-gradient-to-br from-gray-900 to-black p-5">
           <div className="flex items-center justify-between">
@@ -198,9 +278,26 @@ export function DashboardPage({ orders }: DashboardPageProps) {
           </div>
           <p className="mt-3 text-3xl font-bold text-yellow-400">{stats.running}</p>
           <div className="mt-2 flex items-center gap-1">
-            <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-yellow-400"></span>
-            <p className="text-xs text-yellow-500/70">In progress</p>
+            {stats.running > 0 && (
+              <>
+                <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-yellow-400"></span>
+                <p className="text-xs text-yellow-500/70">In progress</p>
+              </>
+            )}
+            {stats.running === 0 && (
+              <p className="text-xs text-yellow-500/70">No active missions</p>
+            )}
           </div>
+        </div>
+
+        {/* Scheduled Orders */}
+        <div className="rounded-xl border border-blue-500/30 bg-gradient-to-br from-blue-500/10 to-black p-5">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-medium uppercase tracking-wide text-blue-500">Scheduled</p>
+            <span className="text-xl">📅</span>
+          </div>
+          <p className="mt-3 text-3xl font-bold text-blue-400">{stats.scheduled}</p>
+          <p className="mt-1 text-xs text-blue-500/70">Awaiting deployment</p>
         </div>
 
         {/* Completed Orders */}
@@ -342,37 +439,38 @@ export function DashboardPage({ orders }: DashboardPageProps) {
           </div>
         ) : (
           <div className="mt-4 space-y-2">
-            {recentOrders.map((order) => (
-              <div
-                key={order.id}
-                className="flex items-center justify-between rounded-lg border border-gray-800 bg-black/50 p-3 transition hover:border-yellow-500/30"
-              >
-                <div className="flex items-center gap-3">
-                  <span className={`inline-flex h-8 w-8 items-center justify-center rounded-full text-sm ${getStatusBg(order.status)}`}>
-                    {order.status === "running" || order.status === "processing" ? "⚡" :
-                     order.status === "completed" ? "✅" :
-                     order.status === "paused" ? "⏸️" : "❌"}
-                  </span>
-                  <div>
-                    <p className="text-sm font-medium text-white">
-                      {order.name || `Mission #${order.id.slice(0, 8)}`}
-                    </p>
-                    <p className="text-xs text-gray-600">
-                      {new Date(order.createdAt).toLocaleDateString()} at{" "}
-                      {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            {recentOrders.map((order) => {
+              const realStatus = getRealStatus(order);
+              return (
+                <div
+                  key={order.id}
+                  className="flex items-center justify-between rounded-lg border border-gray-800 bg-black/50 p-3 transition hover:border-yellow-500/30"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className={`inline-flex h-8 w-8 items-center justify-center rounded-full text-sm ${getStatusBg(order)}`}>
+                      {getStatusIcon(order)}
+                    </span>
+                    <div>
+                      <p className="text-sm font-medium text-white">
+                        {order.name || `Mission #${order.id.slice(0, 8)}`}
+                      </p>
+                      <p className="text-xs text-gray-600">
+                        {new Date(order.createdAt).toLocaleDateString()} at{" "}
+                        {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium capitalize ${getStatusBg(order)} ${getStatusColor(order)}`}>
+                      {realStatus}
+                    </span>
+                    <p className="mt-1 text-xs text-gray-600">
+                      {order.runs?.length || 0} runs
                     </p>
                   </div>
                 </div>
-                <div className="text-right">
-                  <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium capitalize ${getStatusBg(order.status)} ${getStatusColor(order.status)}`}>
-                    {order.status}
-                  </span>
-                  <p className="mt-1 text-xs text-gray-600">
-                    {order.runs?.length || 0} runs
-                  </p>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -402,14 +500,14 @@ export function DashboardPage({ orders }: DashboardPageProps) {
       </div>
 
       {/* Clear Orders Button */}
-      <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-5">
+      <div className="rounded-xl border border-orange-500/30 bg-orange-500/5 p-5">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h3 className="text-sm font-medium text-red-400">🧹 Clear Mission History</h3>
-            <p className="mt-1 text-xs text-red-400/70">
-              Erase all mission records.
+            <h3 className="text-sm font-medium text-orange-300">🧹 Clear Orders</h3>
+            <p className="mt-1 text-xs text-orange-400/70">
+              Delete all orders for a fresh start.
               <br />
-              <span className="text-emerald-400">✓ APIs and Bundles remain safe</span>
+              <span className="text-emerald-400">✓ APIs and Bundles will be kept safe!</span>
             </p>
           </div>
 
@@ -417,24 +515,24 @@ export function DashboardPage({ orders }: DashboardPageProps) {
             <button
               type="button"
               onClick={() => setShowClearConfirm(true)}
-              className="rounded-lg border border-red-500/50 bg-red-500/10 px-4 py-2 text-sm font-medium text-red-300 transition hover:bg-red-500/20"
+              className="rounded-lg border border-orange-500/50 bg-orange-500/10 px-4 py-2 text-sm font-medium text-orange-200 transition hover:bg-orange-500/20"
             >
-              🗑️ Clear Missions
+              🗑️ Clear Orders
             </button>
           ) : (
             <div className="flex items-center gap-2">
-              <span className="text-xs text-red-400">Confirm?</span>
+              <span className="text-xs text-orange-300">Are you sure?</span>
               <button
                 type="button"
                 onClick={handleClearOrders}
                 className="rounded-lg border border-red-500 bg-red-500/30 px-4 py-2 text-sm font-medium text-red-100 transition hover:bg-red-500/50"
               >
-                ✓ Yes, Clear
+                ✓ Yes, Delete Orders
               </button>
               <button
                 type="button"
                 onClick={() => setShowClearConfirm(false)}
-                className="rounded-lg border border-gray-700 bg-gray-800 px-4 py-2 text-sm font-medium text-gray-300 transition hover:bg-gray-700"
+                className="rounded-lg border border-gray-600 bg-gray-800 px-4 py-2 text-sm font-medium text-gray-300 transition hover:bg-gray-700"
               >
                 ✕ Cancel
               </button>
