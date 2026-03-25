@@ -229,111 +229,147 @@ export function NewOrderPage({ apis, bundles, orders, prefillOrder, onCreateOrde
     setExpandedRuns(false);
   };
 
+  // Delivery options
+  const deliveryOptions: DeliveryOption[] = [
+    { mode: "preset", label: "6h", hours: 6 },
+    { mode: "preset", label: "12h", hours: 12 },
+    { mode: "auto", label: "Auto", hours: 18 },
+    { mode: "preset", label: "24h", hours: 24 },
+    { mode: "preset", label: "48h", hours: 48 },
+    { mode: "custom", label: "Custom", hours: customHours },
+  ];
+
   return (
-    <div className="mx-auto max-w-7xl space-y-3 px-4 py-4">
+    <div className="mx-auto max-w-7xl space-y-2 px-3 py-3">
       {/* Compact Header */}
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-2xl">⚡</span>
-            <h2 className="text-xl font-bold tracking-tight text-yellow-400">New Mission</h2>
-          </div>
-          <p className="text-xs text-gray-500">Configure view delivery patterns</p>
+        <div className="flex items-center gap-2">
+          <span className="text-xl">⚡</span>
+          <h2 className="text-lg font-bold tracking-tight text-yellow-400">New Mission</h2>
+          <span className="text-[10px] text-gray-500 ml-2">Configure delivery patterns</span>
         </div>
       </motion.div>
 
-      {/* Main Grid - Tighter Layout */}
-      <div className="grid gap-4 xl:grid-cols-[1.1fr_1fr]">
-        <OrderForm
-          orderName={orderName}
-          postUrl={postUrl}
-          bulkLinks={bulkLinks}
-          totalViews={totalViews}
-          selectedApiId={selectedApiId}
-          selectedBundleId={selectedBundleId}
-          apiOptions={apis.map((api) => ({ id: api.id, name: api.name }))}
-          bundleOptions={bundleOptions.map((bundle) => ({ id: bundle.id, name: bundle.name }))}
-          startDelayHours={startDelayHours}
-          variancePercent={variancePercent}
-          includeLikes={includeLikes}
-          includeShares={includeShares}
-          includeSaves={includeSaves}
-          peakHoursBoost={peakHoursBoost}
-          delivery={delivery}
-          customHours={customHours}
-          onPostUrlChange={setPostUrl}
-          onBulkLinksChange={setBulkLinks}
-          onOrderNameChange={setOrderName}
-          onTotalViewsChange={(value) => {
-            setUseClonedPlan(false);
-            const safeValue = Number.isFinite(value) ? value : 0;
-            setTotalViews(Math.max(0, Math.floor(safeValue)));
-          }}
-          onSelectedApiChange={(apiId) => {
-            setSelectedApiId(apiId);
-            setSelectedBundleId("");
-          }}
-          onSelectedBundleChange={setSelectedBundleId}
-          onStartDelayHoursChange={(value) => {
-            setUseClonedPlan(false);
-            const safeValue = Number.isFinite(value) ? value : 0;
-            setStartDelayHours(Math.max(0, Math.min(168, Math.floor(safeValue))));
-          }}
-          onVarianceChange={(value) => {
-            setUseClonedPlan(false);
-            const safeValue = Number.isFinite(value) ? value : 0;
-            setVariancePercent(Math.max(0, Math.min(50, safeValue)));
-          }}
-          onToggleLikes={(value) => {
-            setUseClonedPlan(false);
-            setIncludeLikes(value);
-          }}
-          onToggleShares={(value) => {
-            setUseClonedPlan(false);
-            setIncludeShares(value);
-          }}
-          onToggleSaves={(value) => {
-            setUseClonedPlan(false);
-            setIncludeSaves(value);
-          }}
-          onPeakHoursChange={(value) => {
-            setUseClonedPlan(false);
-            setPeakHoursBoost(value);
-          }}
-          onDeliveryChange={(option) => {
-            setUseClonedPlan(false);
-            setDelivery(option);
-          }}
-          onCustomHoursChange={(hours) => {
-            setUseClonedPlan(false);
-            const safeHours = Number.isFinite(hours) ? hours : 1;
-            const clampedHours = Math.max(1, Math.min(96, safeHours));
-            setCustomHours(clampedHours);
-            setDelivery({ mode: "custom", label: "Custom", hours: clampedHours });
-          }}
-        />
-
-        {/* Right Column - Compact */}
-        <div className="space-y-3">
-          {/* Detection Risk - Compact Inline */}
-          <div className="flex items-center justify-between rounded-xl border border-yellow-500/20 bg-gradient-to-br from-gray-900 to-black px-4 py-3">
-            <div className="flex items-center gap-3">
-              <span className="text-base">🎯</span>
+      {/* Main Grid - Two Columns */}
+      <div className="grid gap-3 xl:grid-cols-2">
+        
+        {/* LEFT COLUMN - Basic Order Info */}
+        <div className="space-y-2">
+          <div className="rounded-xl border border-yellow-500/20 bg-gradient-to-br from-gray-900 to-black p-3">
+            <h3 className="text-xs font-semibold text-yellow-400 mb-2">📋 Order Details</h3>
+            
+            {/* Order Name & URL */}
+            <div className="grid grid-cols-2 gap-2 mb-2">
               <div>
-                <h2 className="text-sm font-semibold text-yellow-400">Detection Risk</h2>
-                <p className="text-[10px] text-gray-500">Duration: {safePlan.estimatedDurationHours}h</p>
+                <label className="text-[10px] text-gray-500 mb-1 block">Order Name</label>
+                <input
+                  type="text"
+                  value={orderName}
+                  onChange={(e) => setOrderName(e.target.value)}
+                  placeholder="Mission name..."
+                  className="w-full rounded-lg border border-yellow-500/20 bg-black px-2 py-1.5 text-xs text-white placeholder-gray-600 focus:border-yellow-500/50 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-gray-500 mb-1 block">Total Views</label>
+                <input
+                  type="number"
+                  value={totalViews}
+                  onChange={(e) => {
+                    setUseClonedPlan(false);
+                    const safeValue = Number.isFinite(Number(e.target.value)) ? Number(e.target.value) : 0;
+                    setTotalViews(Math.max(0, Math.floor(safeValue)));
+                  }}
+                  className="w-full rounded-lg border border-yellow-500/20 bg-black px-2 py-1.5 text-xs text-white focus:border-yellow-500/50 focus:outline-none"
+                />
               </div>
             </div>
-            <div className="rounded-lg border border-yellow-500/30 bg-black px-3 py-1.5">
-              <span
-                className={`text-sm font-semibold ${
-                  safePlan.risk === "Safe"
-                    ? "text-emerald-400"
-                    : safePlan.risk === "Medium"
-                      ? "text-yellow-400"
-                      : "text-red-400"
-                }`}
-              >
+
+            {/* Post URL */}
+            <div className="mb-2">
+              <label className="text-[10px] text-gray-500 mb-1 block">Post URL</label>
+              <input
+                type="text"
+                value={postUrl}
+                onChange={(e) => setPostUrl(e.target.value)}
+                placeholder="https://instagram.com/reel/..."
+                className="w-full rounded-lg border border-yellow-500/20 bg-black px-2 py-1.5 text-xs text-white placeholder-gray-600 focus:border-yellow-500/50 focus:outline-none"
+              />
+            </div>
+
+            {/* Bulk Links */}
+            <div className="mb-2">
+              <label className="text-[10px] text-gray-500 mb-1 block">Bulk Links (one per line)</label>
+              <textarea
+                value={bulkLinks}
+                onChange={(e) => setBulkLinks(e.target.value)}
+                placeholder="Paste multiple URLs..."
+                rows={2}
+                className="w-full rounded-lg border border-yellow-500/20 bg-black px-2 py-1.5 text-xs text-white placeholder-gray-600 focus:border-yellow-500/50 focus:outline-none resize-none"
+              />
+            </div>
+
+            {/* API & Bundle Selection */}
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-[10px] text-gray-500 mb-1 block">API Panel</label>
+                <select
+                  value={selectedApiId}
+                  onChange={(e) => {
+                    setSelectedApiId(e.target.value);
+                    setSelectedBundleId("");
+                  }}
+                  className="w-full rounded-lg border border-yellow-500/20 bg-black px-2 py-1.5 text-xs text-white focus:border-yellow-500/50 focus:outline-none"
+                >
+                  <option value="">Select API</option>
+                  {apis.map((api) => (
+                    <option key={api.id} value={api.id}>{api.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] text-gray-500 mb-1 block">Bundle</label>
+                <select
+                  value={selectedBundleId}
+                  onChange={(e) => setSelectedBundleId(e.target.value)}
+                  className="w-full rounded-lg border border-yellow-500/20 bg-black px-2 py-1.5 text-xs text-white focus:border-yellow-500/50 focus:outline-none"
+                >
+                  <option value="">Select Bundle</option>
+                  {bundleOptions.map((bundle) => (
+                    <option key={bundle.id} value={bundle.id}>{bundle.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Growth Graph - Compact */}
+          <GrowthGraph 
+            plan={safePlan}
+            selectedPreset={quickPreset}
+            onApplyPreset={handleApplyPreset}
+            onGenerate={handleGenerate}
+          />
+        </div>
+
+        {/* RIGHT COLUMN - Schedule Preview + Advanced Controls */}
+        <div className="space-y-2">
+          
+          {/* Detection Risk - Inline */}
+          <div className="flex items-center justify-between rounded-lg border border-yellow-500/20 bg-gradient-to-br from-gray-900 to-black px-3 py-2">
+            <div className="flex items-center gap-2">
+              <span className="text-sm">🎯</span>
+              <span className="text-xs font-medium text-yellow-400">Risk:</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-[10px] text-gray-500">{safePlan.estimatedDurationHours}h duration</span>
+              <span className={`rounded-md border px-2 py-0.5 text-xs font-semibold ${
+                safePlan.risk === "Safe"
+                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+                  : safePlan.risk === "Medium"
+                    ? "border-yellow-500/30 bg-yellow-500/10 text-yellow-400"
+                    : "border-red-500/30 bg-red-500/10 text-red-400"
+              }`}>
                 {safePlan.risk}
               </span>
             </div>
@@ -345,100 +381,154 @@ export function NewOrderPage({ apis, bundles, orders, prefillOrder, onCreateOrde
             expandedRuns={expandedRuns}
             onToggleRuns={() => setExpandedRuns((prev) => !prev)}
           />
-        </div>
-      </div>
 
-      {/* Growth Graph with Preset Buttons - Compact */}
-      <GrowthGraph 
-        plan={safePlan}
-        selectedPreset={quickPreset}
-        onApplyPreset={handleApplyPreset}
-        onGenerate={handleGenerate}
-      />
-
-      {/* Price Calculator & Deploy Button - Combined Row */}
-      <div className="grid gap-3 lg:grid-cols-[1fr_auto]">
-        {/* 💰 PRICE CALCULATOR - Compact */}
-        {selectedBundleId && safePlan.runs.length > 0 && (
-          <div className="rounded-xl border border-yellow-500/30 bg-gradient-to-br from-yellow-500/5 to-black p-3">
-            <div className="flex items-center justify-between gap-4">
-              <h3 className="text-sm font-semibold text-yellow-400">💰 Price</h3>
-              
-              {/* Inline Price Items */}
-              <div className="flex flex-wrap items-center gap-2">
-                {(() => {
-                  const selectedBundle = bundles.find(b => b.id === selectedBundleId);
-                  const selectedApi = apis.find(a => a.id === selectedApiId);
-                  
-                  if (!selectedBundle || !selectedApi) return null;
-                  
-                  const viewsService = selectedApi.services.find(s => s.id === selectedBundle.serviceIds.views);
-                  const likesService = selectedApi.services.find(s => s.id === selectedBundle.serviceIds.likes);
-                  const sharesService = selectedApi.services.find(s => s.id === selectedBundle.serviceIds.shares);
-                  const savesService = selectedApi.services.find(s => s.id === selectedBundle.serviceIds.saves);
-                  
-                  const totalViewsQty = safePlan.runs.reduce((sum, run) => sum + (run.views || 0), 0);
-                  const totalLikesQty = safePlan.runs.reduce((sum, run) => sum + (run.likes || 0), 0);
-                  const totalSharesQty = safePlan.runs.reduce((sum, run) => sum + (run.shares || 0), 0);
-                  const totalSavesQty = safePlan.runs.reduce((sum, run) => sum + (run.saves || 0), 0);
-                  
-                  const viewsRate = parseFloat(viewsService?.rate || "0");
-                  const likesRate = parseFloat(likesService?.rate || "0");
-                  const sharesRate = parseFloat(sharesService?.rate || "0");
-                  const savesRate = parseFloat(savesService?.rate || "0");
-                  
-                  const viewsPrice = (totalViewsQty / 1000) * viewsRate;
-                  const likesPrice = includeLikes ? (totalLikesQty / 1000) * likesRate : 0;
-                  const sharesPrice = includeShares ? (totalSharesQty / 1000) * sharesRate : 0;
-                  const savesPrice = includeSaves ? (totalSavesQty / 1000) * savesRate : 0;
-                  
-                  return (
-                    <>
-                      {totalViewsQty > 0 && (
-                        <div className="flex items-center gap-1 rounded-md border border-yellow-500/20 bg-black/50 px-2 py-1">
-                          <span className="text-xs">👁️</span>
-                          <span className="text-[10px] text-gray-400">{(totalViewsQty/1000).toFixed(0)}k</span>
-                          <span className="text-xs font-medium text-yellow-300">₹{viewsPrice.toFixed(0)}</span>
-                        </div>
-                      )}
-                      
-                      {includeLikes && totalLikesQty > 0 && (
-                        <div className="flex items-center gap-1 rounded-md border border-yellow-500/20 bg-black/50 px-2 py-1">
-                          <span className="text-xs">❤️</span>
-                          <span className="text-[10px] text-gray-400">{(totalLikesQty/1000).toFixed(1)}k</span>
-                          <span className="text-xs font-medium text-yellow-300">₹{likesPrice.toFixed(0)}</span>
-                        </div>
-                      )}
-                      
-                      {includeShares && totalSharesQty > 0 && (
-                        <div className="flex items-center gap-1 rounded-md border border-yellow-500/20 bg-black/50 px-2 py-1">
-                          <span className="text-xs">🔄</span>
-                          <span className="text-[10px] text-gray-400">{(totalSharesQty/1000).toFixed(1)}k</span>
-                          <span className="text-xs font-medium text-yellow-300">₹{sharesPrice.toFixed(0)}</span>
-                        </div>
-                      )}
-                      
-                      {includeSaves && totalSavesQty > 0 && (
-                        <div className="flex items-center gap-1 rounded-md border border-yellow-500/20 bg-black/50 px-2 py-1">
-                          <span className="text-xs">💾</span>
-                          <span className="text-[10px] text-gray-400">{(totalSavesQty/1000).toFixed(1)}k</span>
-                          <span className="text-xs font-medium text-yellow-300">₹{savesPrice.toFixed(0)}</span>
-                        </div>
-                      )}
-                    </>
-                  );
-                })()}
+          {/* Advanced Controls - Below Schedule Preview */}
+          <div className="rounded-xl border border-yellow-500/20 bg-gradient-to-br from-gray-900 to-black p-3">
+            <h3 className="text-xs font-semibold text-yellow-400 mb-2">⚙️ Advanced Controls</h3>
+            
+            {/* Row 1: Start Delay & Variance */}
+            <div className="grid grid-cols-2 gap-2 mb-2">
+              <div>
+                <label className="text-[10px] text-gray-500 mb-1 block">Start Delay (hours)</label>
+                <input
+                  type="number"
+                  value={startDelayHours}
+                  onChange={(e) => {
+                    setUseClonedPlan(false);
+                    const safeValue = Number.isFinite(Number(e.target.value)) ? Number(e.target.value) : 0;
+                    setStartDelayHours(Math.max(0, Math.min(168, Math.floor(safeValue))));
+                  }}
+                  min={0}
+                  max={168}
+                  className="w-full rounded-lg border border-yellow-500/20 bg-black px-2 py-1.5 text-xs text-white focus:border-yellow-500/50 focus:outline-none"
+                />
               </div>
+              <div>
+                <label className="text-[10px] text-gray-500 mb-1 block">Variance: {variancePercent}%</label>
+                <input
+                  type="range"
+                  value={variancePercent}
+                  onChange={(e) => {
+                    setUseClonedPlan(false);
+                    setVariancePercent(Number(e.target.value));
+                  }}
+                  min={0}
+                  max={50}
+                  className="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-yellow-500"
+                />
+              </div>
+            </div>
+
+            {/* Row 2: Delivery Speed */}
+            <div className="mb-2">
+              <label className="text-[10px] text-gray-500 mb-1 block">Delivery Speed</label>
+              <div className="flex gap-1 flex-wrap">
+                {deliveryOptions.map((option) => (
+                  <button
+                    key={option.label}
+                    type="button"
+                    onClick={() => {
+                      setUseClonedPlan(false);
+                      setDelivery(option);
+                    }}
+                    className={`rounded-md px-2 py-1 text-[10px] font-medium transition ${
+                      delivery.label === option.label
+                        ? "border border-yellow-500 bg-yellow-500/20 text-yellow-300"
+                        : "border border-yellow-500/20 bg-black text-gray-400 hover:text-yellow-300"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+              {delivery.mode === "custom" && (
+                <input
+                  type="number"
+                  value={customHours}
+                  onChange={(e) => {
+                    setUseClonedPlan(false);
+                    const safeHours = Number.isFinite(Number(e.target.value)) ? Number(e.target.value) : 1;
+                    const clampedHours = Math.max(1, Math.min(96, safeHours));
+                    setCustomHours(clampedHours);
+                    setDelivery({ mode: "custom", label: "Custom", hours: clampedHours });
+                  }}
+                  min={1}
+                  max={96}
+                  placeholder="Hours"
+                  className="mt-1 w-20 rounded-lg border border-yellow-500/20 bg-black px-2 py-1 text-xs text-white focus:border-yellow-500/50 focus:outline-none"
+                />
+              )}
+            </div>
+
+            {/* Row 3: Engagement Toggles + Peak Hours */}
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="text-[10px] text-gray-500">Engagement:</label>
               
-              {/* Total */}
-              <div className="flex items-center gap-2 rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-3 py-1.5">
-                <span className="text-xs text-gray-400">Total:</span>
-                <span className="text-lg font-bold text-yellow-400">
-                  ₹{(() => {
+              <button
+                type="button"
+                onClick={() => { setUseClonedPlan(false); setIncludeLikes(!includeLikes); }}
+                className={`flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium transition ${
+                  includeLikes
+                    ? "border border-pink-500 bg-pink-500/20 text-pink-300"
+                    : "border border-gray-600 bg-black text-gray-500"
+                }`}
+              >
+                ❤️ Likes
+              </button>
+              
+              <button
+                type="button"
+                onClick={() => { setUseClonedPlan(false); setIncludeShares(!includeShares); }}
+                className={`flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium transition ${
+                  includeShares
+                    ? "border border-blue-500 bg-blue-500/20 text-blue-300"
+                    : "border border-gray-600 bg-black text-gray-500"
+                }`}
+              >
+                🔄 Shares
+              </button>
+              
+              <button
+                type="button"
+                onClick={() => { setUseClonedPlan(false); setIncludeSaves(!includeSaves); }}
+                className={`flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium transition ${
+                  includeSaves
+                    ? "border border-purple-500 bg-purple-500/20 text-purple-300"
+                    : "border border-gray-600 bg-black text-gray-500"
+                }`}
+              >
+                💾 Saves
+              </button>
+
+              <div className="ml-auto">
+                <button
+                  type="button"
+                  onClick={() => { setUseClonedPlan(false); setPeakHoursBoost(!peakHoursBoost); }}
+                  className={`flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium transition ${
+                    peakHoursBoost
+                      ? "border border-orange-500 bg-orange-500/20 text-orange-300"
+                      : "border border-gray-600 bg-black text-gray-500"
+                  }`}
+                >
+                  🔥 Peak Hours
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Price Calculator - Compact Horizontal */}
+          {selectedBundleId && safePlan.runs.length > 0 && (
+            <div className="rounded-lg border border-yellow-500/30 bg-gradient-to-br from-yellow-500/5 to-black p-2">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <span className="text-xs font-semibold text-yellow-400">💰</span>
+                
+                {/* Price Items */}
+                <div className="flex items-center gap-1 flex-wrap flex-1">
+                  {(() => {
                     const selectedBundle = bundles.find(b => b.id === selectedBundleId);
                     const selectedApi = apis.find(a => a.id === selectedApiId);
                     
-                    if (!selectedBundle || !selectedApi) return "0";
+                    if (!selectedBundle || !selectedApi) return null;
                     
                     const viewsService = selectedApi.services.find(s => s.id === selectedBundle.serviceIds.views);
                     const likesService = selectedApi.services.find(s => s.id === selectedBundle.serviceIds.likes);
@@ -460,323 +550,325 @@ export function NewOrderPage({ apis, bundles, orders, prefillOrder, onCreateOrde
                     const sharesPrice = includeShares ? (totalSharesQty / 1000) * sharesRate : 0;
                     const savesPrice = includeSaves ? (totalSavesQty / 1000) * savesRate : 0;
                     
-                    return (viewsPrice + likesPrice + sharesPrice + savesPrice).toFixed(0);
+                    return (
+                      <>
+                        <span className="text-[10px] text-gray-400">👁️{(totalViewsQty/1000).toFixed(0)}k=₹{viewsPrice.toFixed(0)}</span>
+                        {includeLikes && totalLikesQty > 0 && (
+                          <span className="text-[10px] text-gray-400">❤️{(totalLikesQty/1000).toFixed(1)}k=₹{likesPrice.toFixed(0)}</span>
+                        )}
+                        {includeShares && totalSharesQty > 0 && (
+                          <span className="text-[10px] text-gray-400">🔄{(totalSharesQty/1000).toFixed(1)}k=₹{sharesPrice.toFixed(0)}</span>
+                        )}
+                        {includeSaves && totalSavesQty > 0 && (
+                          <span className="text-[10px] text-gray-400">💾{(totalSavesQty/1000).toFixed(1)}k=₹{savesPrice.toFixed(0)}</span>
+                        )}
+                      </>
+                    );
                   })()}
-                </span>
+                </div>
+                
+                {/* Total */}
+                <div className="rounded-md border border-yellow-500/40 bg-yellow-500/10 px-2 py-1">
+                  <span className="text-sm font-bold text-yellow-400">
+                    ₹{(() => {
+                      const selectedBundle = bundles.find(b => b.id === selectedBundleId);
+                      const selectedApi = apis.find(a => a.id === selectedApiId);
+                      
+                      if (!selectedBundle || !selectedApi) return "0";
+                      
+                      const viewsService = selectedApi.services.find(s => s.id === selectedBundle.serviceIds.views);
+                      const likesService = selectedApi.services.find(s => s.id === selectedBundle.serviceIds.likes);
+                      const sharesService = selectedApi.services.find(s => s.id === selectedBundle.serviceIds.shares);
+                      const savesService = selectedApi.services.find(s => s.id === selectedBundle.serviceIds.saves);
+                      
+                      const totalViewsQty = safePlan.runs.reduce((sum, run) => sum + (run.views || 0), 0);
+                      const totalLikesQty = safePlan.runs.reduce((sum, run) => sum + (run.likes || 0), 0);
+                      const totalSharesQty = safePlan.runs.reduce((sum, run) => sum + (run.shares || 0), 0);
+                      const totalSavesQty = safePlan.runs.reduce((sum, run) => sum + (run.saves || 0), 0);
+                      
+                      const viewsRate = parseFloat(viewsService?.rate || "0");
+                      const likesRate = parseFloat(likesService?.rate || "0");
+                      const sharesRate = parseFloat(sharesService?.rate || "0");
+                      const savesRate = parseFloat(savesService?.rate || "0");
+                      
+                      const viewsPrice = (totalViewsQty / 1000) * viewsRate;
+                      const likesPrice = includeLikes ? (totalLikesQty / 1000) * likesRate : 0;
+                      const sharesPrice = includeShares ? (totalSharesQty / 1000) * sharesRate : 0;
+                      const savesPrice = includeSaves ? (totalSavesQty / 1000) * savesRate : 0;
+                      
+                      return (viewsPrice + likesPrice + sharesPrice + savesPrice).toFixed(0);
+                    })()}
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
-        )}
-
-        {/* Deploy Button - Compact */}
-        <div className="flex items-center gap-3 rounded-xl border border-yellow-500/20 bg-gradient-to-br from-gray-900 to-black px-4 py-2">
-          <p className="hidden text-xs text-gray-500 lg:block">Ready to deploy</p>
-          <button
-            type="button"
-            disabled={isCreatingOrder}
-            onClick={async () => {
-              setCreateError("");
-              setCreateSuccess("");
-              if (!selectedBundleId) {
-                setCreateError("Select a bundle before creating a mission.");
-                return;
-              }
-              const bulkTargets = bulkLinks
-                .split(/\r?\n/)
-                .map((line) => line.trim())
-                .filter(Boolean);
-              const singleTarget = postUrl.trim();
-              const targets = bulkTargets.length > 0 ? bulkTargets : singleTarget ? [singleTarget] : [];
-              if (!targets.length) {
-                setCreateError("Add a post URL or paste multiple links before creating a mission.");
-                return;
-              }
-              const invalidTarget = targets.find((target) => !isValidUrl(target));
-              if (invalidTarget) {
-                setCreateError(`Invalid URL found: ${invalidTarget}`);
-                return;
-              }
-
-              const selectedApi = apis.find((api) => api.id === selectedApiId) ?? null;
-              if (!selectedApi) {
-                setCreateError("Select an API before creating a mission.");
-                return;
-              }
-              if (!selectedApi.url.trim()) {
-                setCreateError("API URL is required.");
-                return;
-              }
-              if (!isValidUrl(selectedApi.url.trim())) {
-                setCreateError("API URL must be a valid URL.");
-                return;
-              }
-              if (!selectedApi.key.trim()) {
-                setCreateError("API key is required.");
-                return;
-              }
-
-              const selectedBundle = bundles.find((bundle) => bundle.id === selectedBundleId);
-              if (!selectedBundle) {
-                setCreateError("Selected bundle is missing. Please pick a valid bundle.");
-                return;
-              }
-              const viewsServiceId = selectedBundle.serviceIds.views.trim();
-              if (!viewsServiceId) {
-                setCreateError("Selected bundle has no Views service ID.");
-                return;
-              }
-              const likesServiceId = selectedBundle.serviceIds.likes.trim();
-              const sharesServiceId = selectedBundle.serviceIds.shares.trim();
-              const savesServiceId = selectedBundle.serviceIds.saves.trim();
-              if (includeLikes && !likesServiceId) {
-                setCreateError("Selected bundle has no Likes service ID.");
-                return;
-              }
-              if (includeShares && !sharesServiceId) {
-                setCreateError("Selected bundle has no Shares service ID.");
-                return;
-              }
-              if (includeSaves && !savesServiceId) {
-                setCreateError("Selected bundle has no Saves service ID.");
-                return;
-              }
-
-              const quantity = (safePlan?.runs || []).reduce((acc, run) => acc + run.views, 0);
-              if (!Number.isFinite(quantity) || quantity <= 0) {
-                setCreateError("Quantity must be a valid number greater than 0.");
-                return;
-              }
-              if (quantity < 100) {
-                setCreateError("Views must be at least 100.");
-                return;
-              }
-
-              const totalLikes = (safePlan?.runs || []).reduce((acc, run) => acc + run.likes, 0);
-              const totalShares = (safePlan?.runs || []).reduce((acc, run) => acc + run.shares, 0);
-              const totalSaves = (safePlan?.runs || []).reduce((acc, run) => acc + run.saves, 0);
-
-              if (includeLikes && totalLikes < 10) {
-                setCreateError("Likes must be at least 10.");
-                return;
-              }
-              if (includeShares && totalShares < 20) {
-                setCreateError("Shares must be at least 20.");
-                return;
-              }
-              if (includeSaves && totalSaves < 10) {
-                setCreateError("Saves must be at least 10.");
-                return;
-              }
-
-              if (quantity > 100000) {
-                const proceed = window.confirm("Are you sure? This is a large mission.");
-                if (!proceed) {
-                  return;
-                }
-              }
-              const viewRuns = (safePlan?.runs || []).map((run) => ({
-                time: run.at.toISOString(),
-                quantity: Math.floor(run.views),
-              }));
-              if (
-                !viewRuns.length ||
-                viewRuns.some((run) => !run.time || !Number.isFinite(run.quantity) || run.quantity <= 0)
-              ) {
-                setCreateError("Run schedule is invalid. Regenerate pattern and try again.");
-                return;
-              }
-
-              const likesRuns = (safePlan?.runs || []).map((run) => ({
-                time: run.at.toISOString(),
-                quantity: Math.max(0, Math.floor(run.likes)),
-              }));
-              const sharesRuns = (safePlan?.runs || []).map((run) => ({
-                time: run.at.toISOString(),
-                quantity: Math.max(0, Math.floor(run.shares)),
-              }));
-              const savesRuns = (safePlan?.runs || []).map((run) => ({
-                time: run.at.toISOString(),
-                quantity: Math.max(0, Math.floor(run.saves)),
-              }));
-
-              const servicesPayload: {
-                views: { serviceId: string; runs: Array<{ time: string; quantity: number }> };
-                likes?: { serviceId: string; runs: Array<{ time: string; quantity: number }> };
-                shares?: { serviceId: string; runs: Array<{ time: string; quantity: number }> };
-                saves?: { serviceId: string; runs: Array<{ time: string; quantity: number }> };
-              } = {
-                views: {
-                  serviceId: viewsServiceId,
-                  runs: viewRuns,
-                },
-              };
-
-              if (includeLikes) {
-                servicesPayload.likes = {
-                  serviceId: likesServiceId,
-                  runs: likesRuns,
-                };
-              }
-              if (includeShares) {
-                servicesPayload.shares = {
-                  serviceId: sharesServiceId,
-                  runs: sharesRuns,
-                };
-              }
-              if (includeSaves) {
-                servicesPayload.saves = {
-                  serviceId: savesServiceId,
-                  runs: savesRuns,
-                };
-              }
-
-              setIsCreatingOrder(true);
-              setCreateSuccess(`Processing ${targets.length} missions...`);
-              try {
-                const activeLinks = new Set(
-                  orders
-                    .filter((order) => {
-                      const now = Date.now();
-                      const runs = order.runs || [];
-                      if (!runs.length) return false;
-                      const allRunsCompleted = runs.every((run) => {
-                        const runTime = new Date(run.at).getTime();
-                        return runTime <= now;
-                      });
-                      return !allRunsCompleted && order.status !== "cancelled";
-                    })
-                    .map((order) => order.link.replace(/\/+$/, "").toLowerCase())
-                );
-                const createdLinks = new Set<string>();
-                let successCount = 0;
-                let failedCount = 0;
-                let lastError = "";
-
-                for (let index = 0; index < targets.length; index += 1) {
-                  const trimmedUrl = targets[index];
-                  const normalizedTarget = trimmedUrl.replace(/\/+$/, "").toLowerCase();
-                  if (activeLinks.has(normalizedTarget) || createdLinks.has(normalizedTarget)) {
-                    failedCount += 1;
-                    lastError = "Warning: An active mission with the same link already exists.";
-                    continue;
-                  }
-
-                  try {
-                    const result = await createSmmOrder({
-                      name: orderName.trim() || undefined,
-                      apiUrl: selectedApi.url,
-                      apiKey: selectedApi.key,
-                      link: trimmedUrl,
-                      services: servicesPayload,
-                    });
-
-                    const order: CreatedOrder = {
-                      id: createOrderId(),
-                      name: orderName.trim(),
-                      schedulerOrderId: result.schedulerOrderId,
-                      smmOrderId: result.orderId ?? "Scheduled",
-                      link: trimmedUrl,
-                      totalViews: quantity,
-                      startDelayHours,
-                      patternType: safePlan.patternType,
-                      patternName: safePlan.patternName,
-                      runs: safePlan?.runs || [],
-                      engagement: {
-                        likes: totalLikes,
-                        shares: totalShares,
-                        saves: totalSaves,
-                      },
-                      serviceId: viewsServiceId,
-                      selectedAPI: selectedApi.name,
-                      selectedBundle: selectedBundle.name,
-                      status: result.status === "completed" ? "completed" : "running",
-                      completedRuns: typeof result.completedRuns === "number" ? result.completedRuns : 0,
-                      runStatuses: (safePlan?.runs || []).map(() => "pending"),
-                      createdAt: new Date().toISOString(),
-                      lastUpdatedAt: new Date().toISOString(),
-                    };
-
-                    if (!order.name) {
-                      order.name = `Mission #${order.id}`;
-                    } else if (targets.length > 1) {
-                      order.name = `${order.name} #${index + 1}`;
-                    }
-
-                    onCreateOrder(order);
-                    createdLinks.add(normalizedTarget);
-                    successCount += 1;
-                  } catch (error) {
-                    const message = error instanceof Error ? error.message : "Failed to create mission";
-                    const failedOrder: CreatedOrder = {
-                      id: createOrderId(),
-                      name: orderName.trim() || "",
-                      smmOrderId: "N/A",
-                      link: trimmedUrl,
-                      totalViews: quantity,
-                      startDelayHours,
-                      patternType: safePlan.patternType,
-                      patternName: safePlan.patternName,
-                      runs: safePlan?.runs || [],
-                      engagement: {
-                        likes: totalLikes,
-                        shares: totalShares,
-                        saves: totalSaves,
-                      },
-                      serviceId: viewsServiceId,
-                      selectedAPI: selectedApi.name,
-                      selectedBundle: selectedBundle.name,
-                      status: "failed",
-                      completedRuns: 0,
-                      runStatuses: (safePlan?.runs || []).map((_, runIndex) => (runIndex === 0 ? "cancelled" : "pending")),
-                      runErrors: (safePlan?.runs || []).map((_, runIndex) => (runIndex === 0 ? message : "")),
-                      errorMessage: message,
-                      createdAt: new Date().toISOString(),
-                      lastUpdatedAt: new Date().toISOString(),
-                    };
-                    if (!failedOrder.name) {
-                      failedOrder.name = `Mission #${failedOrder.id}`;
-                    } else if (targets.length > 1) {
-                      failedOrder.name = `${failedOrder.name} #${index + 1}`;
-                    }
-                    onCreateOrder(failedOrder);
-                    failedCount += 1;
-                    lastError = message;
-                  }
-                }
-
-                if (failedCount > 0 && successCount === 0) {
-                  setCreateError(lastError || "Failed to create missions.");
-                  setCreateSuccess("");
-                  return;
-                }
-
-                const successLabel =
-                  targets.length > 1
-                    ? `Processed ${targets.length} missions. Success: ${successCount}, Failed: ${failedCount}`
-                    : "Mission Deployed Successfully";
-                setCreateSuccess(successLabel);
-                if (failedCount > 0) {
-                  setCreateError(`Some missions failed. Last error: ${lastError}`);
-                }
-                onNavigateToOrders(successLabel);
-              } finally {
-                setIsCreatingOrder(false);
-              }
-            }}
-            className="whitespace-nowrap rounded-lg border border-yellow-500/50 bg-yellow-500/20 px-5 py-2 text-sm font-semibold text-yellow-300 transition hover:bg-yellow-500/30 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isCreatingOrder ? "Deploying..." : "🦇 Deploy Mission"}
-          </button>
+          )}
         </div>
       </div>
 
-      {/* Error/Success Messages - Compact */}
-      {(createError || createSuccess) && (
-        <div className="flex flex-wrap gap-2">
-          {createError && <p className="text-xs text-red-400">❌ {createError}</p>}
-          {createSuccess && <p className="text-xs text-emerald-400">✅ {createSuccess}</p>}
+      {/* Deploy Button - Full Width Bottom */}
+      <div className="flex items-center justify-between rounded-lg border border-yellow-500/20 bg-gradient-to-br from-gray-900 to-black px-3 py-2">
+        <div className="flex items-center gap-2">
+          {createError && <span className="text-[10px] text-red-400">❌ {createError}</span>}
+          {createSuccess && <span className="text-[10px] text-emerald-400">✅ {createSuccess}</span>}
+          {!createError && !createSuccess && <span className="text-[10px] text-gray-500">Ready to deploy mission</span>}
         </div>
-      )}
+        <button
+          type="button"
+          disabled={isCreatingOrder}
+          onClick={async () => {
+            setCreateError("");
+            setCreateSuccess("");
+            if (!selectedBundleId) {
+              setCreateError("Select a bundle before creating a mission.");
+              return;
+            }
+            const bulkTargets = bulkLinks
+              .split(/\r?\n/)
+              .map((line) => line.trim())
+              .filter(Boolean);
+            const singleTarget = postUrl.trim();
+            const targets = bulkTargets.length > 0 ? bulkTargets : singleTarget ? [singleTarget] : [];
+            if (!targets.length) {
+              setCreateError("Add a post URL or paste multiple links.");
+              return;
+            }
+            const invalidTarget = targets.find((target) => !isValidUrl(target));
+            if (invalidTarget) {
+              setCreateError(`Invalid URL: ${invalidTarget.slice(0, 30)}...`);
+              return;
+            }
+
+            const selectedApi = apis.find((api) => api.id === selectedApiId) ?? null;
+            if (!selectedApi) {
+              setCreateError("Select an API.");
+              return;
+            }
+            if (!selectedApi.url.trim()) {
+              setCreateError("API URL is required.");
+              return;
+            }
+            if (!isValidUrl(selectedApi.url.trim())) {
+              setCreateError("API URL must be valid.");
+              return;
+            }
+            if (!selectedApi.key.trim()) {
+              setCreateError("API key is required.");
+              return;
+            }
+
+            const selectedBundle = bundles.find((bundle) => bundle.id === selectedBundleId);
+            if (!selectedBundle) {
+              setCreateError("Select a valid bundle.");
+              return;
+            }
+            const viewsServiceId = selectedBundle.serviceIds.views.trim();
+            if (!viewsServiceId) {
+              setCreateError("Bundle has no Views service.");
+              return;
+            }
+            const likesServiceId = selectedBundle.serviceIds.likes.trim();
+            const sharesServiceId = selectedBundle.serviceIds.shares.trim();
+            const savesServiceId = selectedBundle.serviceIds.saves.trim();
+            if (includeLikes && !likesServiceId) {
+              setCreateError("Bundle has no Likes service.");
+              return;
+            }
+            if (includeShares && !sharesServiceId) {
+              setCreateError("Bundle has no Shares service.");
+              return;
+            }
+            if (includeSaves && !savesServiceId) {
+              setCreateError("Bundle has no Saves service.");
+              return;
+            }
+
+            const quantity = (safePlan?.runs || []).reduce((acc, run) => acc + run.views, 0);
+            if (!Number.isFinite(quantity) || quantity <= 0) {
+              setCreateError("Quantity must be > 0.");
+              return;
+            }
+            if (quantity < 100) {
+              setCreateError("Views must be at least 100.");
+              return;
+            }
+
+            const totalLikes = (safePlan?.runs || []).reduce((acc, run) => acc + run.likes, 0);
+            const totalShares = (safePlan?.runs || []).reduce((acc, run) => acc + run.shares, 0);
+            const totalSaves = (safePlan?.runs || []).reduce((acc, run) => acc + run.saves, 0);
+
+            if (includeLikes && totalLikes < 10) {
+              setCreateError("Likes must be at least 10.");
+              return;
+            }
+            if (includeShares && totalShares < 20) {
+              setCreateError("Shares must be at least 20.");
+              return;
+            }
+            if (includeSaves && totalSaves < 10) {
+              setCreateError("Saves must be at least 10.");
+              return;
+            }
+
+            if (quantity > 100000) {
+              const proceed = window.confirm("Large mission. Continue?");
+              if (!proceed) return;
+            }
+
+            const viewRuns = (safePlan?.runs || []).map((run) => ({
+              time: run.at.toISOString(),
+              quantity: Math.floor(run.views),
+            }));
+            if (!viewRuns.length || viewRuns.some((run) => !run.time || !Number.isFinite(run.quantity) || run.quantity <= 0)) {
+              setCreateError("Invalid run schedule. Regenerate.");
+              return;
+            }
+
+            const likesRuns = (safePlan?.runs || []).map((run) => ({
+              time: run.at.toISOString(),
+              quantity: Math.max(0, Math.floor(run.likes)),
+            }));
+            const sharesRuns = (safePlan?.runs || []).map((run) => ({
+              time: run.at.toISOString(),
+              quantity: Math.max(0, Math.floor(run.shares)),
+            }));
+            const savesRuns = (safePlan?.runs || []).map((run) => ({
+              time: run.at.toISOString(),
+              quantity: Math.max(0, Math.floor(run.saves)),
+            }));
+
+            const servicesPayload: {
+              views: { serviceId: string; runs: Array<{ time: string; quantity: number }> };
+              likes?: { serviceId: string; runs: Array<{ time: string; quantity: number }> };
+              shares?: { serviceId: string; runs: Array<{ time: string; quantity: number }> };
+              saves?: { serviceId: string; runs: Array<{ time: string; quantity: number }> };
+            } = {
+              views: { serviceId: viewsServiceId, runs: viewRuns },
+            };
+
+            if (includeLikes) servicesPayload.likes = { serviceId: likesServiceId, runs: likesRuns };
+            if (includeShares) servicesPayload.shares = { serviceId: sharesServiceId, runs: sharesRuns };
+            if (includeSaves) servicesPayload.saves = { serviceId: savesServiceId, runs: savesRuns };
+
+            setIsCreatingOrder(true);
+            setCreateSuccess(`Processing ${targets.length} missions...`);
+            
+            try {
+              const activeLinks = new Set(
+                orders
+                  .filter((order) => {
+                    const now = Date.now();
+                    const runs = order.runs || [];
+                    if (!runs.length) return false;
+                    const allRunsCompleted = runs.every((run) => new Date(run.at).getTime() <= now);
+                    return !allRunsCompleted && order.status !== "cancelled";
+                  })
+                  .map((order) => order.link.replace(/\/+$/, "").toLowerCase())
+              );
+              const createdLinks = new Set<string>();
+              let successCount = 0;
+              let failedCount = 0;
+              let lastError = "";
+
+              for (let index = 0; index < targets.length; index += 1) {
+                const trimmedUrl = targets[index];
+                const normalizedTarget = trimmedUrl.replace(/\/+$/, "").toLowerCase();
+                if (activeLinks.has(normalizedTarget) || createdLinks.has(normalizedTarget)) {
+                  failedCount += 1;
+                  lastError = "Duplicate link.";
+                  continue;
+                }
+
+                try {
+                  const result = await createSmmOrder({
+                    name: orderName.trim() || undefined,
+                    apiUrl: selectedApi.url,
+                    apiKey: selectedApi.key,
+                    link: trimmedUrl,
+                    services: servicesPayload,
+                  });
+
+                  const order: CreatedOrder = {
+                    id: createOrderId(),
+                    name: orderName.trim(),
+                    schedulerOrderId: result.schedulerOrderId,
+                    smmOrderId: result.orderId ?? "Scheduled",
+                    link: trimmedUrl,
+                    totalViews: quantity,
+                    startDelayHours,
+                    patternType: safePlan.patternType,
+                    patternName: safePlan.patternName,
+                    runs: safePlan?.runs || [],
+                    engagement: { likes: totalLikes, shares: totalShares, saves: totalSaves },
+                    serviceId: viewsServiceId,
+                    selectedAPI: selectedApi.name,
+                    selectedBundle: selectedBundle.name,
+                    status: result.status === "completed" ? "completed" : "running",
+                    completedRuns: typeof result.completedRuns === "number" ? result.completedRuns : 0,
+                    runStatuses: (safePlan?.runs || []).map(() => "pending"),
+                    createdAt: new Date().toISOString(),
+                    lastUpdatedAt: new Date().toISOString(),
+                  };
+
+                  if (!order.name) order.name = `Mission #${order.id}`;
+                  else if (targets.length > 1) order.name = `${order.name} #${index + 1}`;
+
+                  onCreateOrder(order);
+                  createdLinks.add(normalizedTarget);
+                  successCount += 1;
+                } catch (error) {
+                  const message = error instanceof Error ? error.message : "Failed";
+                  const failedOrder: CreatedOrder = {
+                    id: createOrderId(),
+                    name: orderName.trim() || "",
+                    smmOrderId: "N/A",
+                    link: trimmedUrl,
+                    totalViews: quantity,
+                    startDelayHours,
+                    patternType: safePlan.patternType,
+                    patternName: safePlan.patternName,
+                    runs: safePlan?.runs || [],
+                    engagement: { likes: totalLikes, shares: totalShares, saves: totalSaves },
+                    serviceId: viewsServiceId,
+                    selectedAPI: selectedApi.name,
+                    selectedBundle: selectedBundle.name,
+                    status: "failed",
+                    completedRuns: 0,
+                    runStatuses: (safePlan?.runs || []).map((_, i) => (i === 0 ? "cancelled" : "pending")),
+                    runErrors: (safePlan?.runs || []).map((_, i) => (i === 0 ? message : "")),
+                    errorMessage: message,
+                    createdAt: new Date().toISOString(),
+                    lastUpdatedAt: new Date().toISOString(),
+                  };
+                  if (!failedOrder.name) failedOrder.name = `Mission #${failedOrder.id}`;
+                  else if (targets.length > 1) failedOrder.name = `${failedOrder.name} #${index + 1}`;
+                  onCreateOrder(failedOrder);
+                  failedCount += 1;
+                  lastError = message;
+                }
+              }
+
+              if (failedCount > 0 && successCount === 0) {
+                setCreateError(lastError || "Failed.");
+                setCreateSuccess("");
+                return;
+              }
+
+              const successLabel = targets.length > 1
+                ? `Done: ${successCount}/${targets.length}`
+                : "Mission Deployed ✅";
+              setCreateSuccess(successLabel);
+              if (failedCount > 0) setCreateError(`${failedCount} failed`);
+              onNavigateToOrders(successLabel);
+            } finally {
+              setIsCreatingOrder(false);
+            }
+          }}
+          className="whitespace-nowrap rounded-lg border border-yellow-500/50 bg-yellow-500/20 px-4 py-1.5 text-xs font-semibold text-yellow-300 transition hover:bg-yellow-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {isCreatingOrder ? "Deploying..." : "🦇 Deploy"}
+        </button>
+      </div>
     </div>
   );
 }
