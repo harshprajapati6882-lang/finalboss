@@ -19,6 +19,44 @@ const NAV_ITEMS: { key: NavKey; label: string; icon: string }[] = [
   { key: "bundles", label: "Bundles", icon: "📁" },
 ];
 
+// 🦇 30 MOTIVATIONAL BATMAN QUOTES
+const BATMAN_QUOTES = [
+  "It's not who I am underneath, but what I do that defines me.",
+  "The night is darkest just before the dawn.",
+  "I'm whatever Gotham needs me to be.",
+  "A hero can be anyone.",
+  "Why do we fall? So we can learn to pick ourselves up.",
+  "It's not about what I want. It's about what's fair.",
+  "Criminals are a superstitious, cowardly lot.",
+  "I wear a mask. And that mask is not to hide who I am, but to create what I am.",
+  "The training is nothing! The will is everything!",
+  "Sometimes the truth isn't good enough. Sometimes people deserve more.",
+  "I won't kill you, but I don't have to save you.",
+  "You either die a hero or live long enough to see yourself become the villain.",
+  "Endure. You can be the outcast. You can be the one they all turn against.",
+  "People need dramatic examples to shake them out of apathy.",
+  "Everything's impossible until somebody does it.",
+  "I am vengeance. I am the night. I am Batman.",
+  "The world only makes sense if you force it to.",
+  "It's not about deserve. It's about what you believe.",
+  "You don't get heaven or hell. Do you know the only reward you get for being Batman? You get to be Batman.",
+  "I have one power. I never give up.",
+  "If you make yourself more than just a man, you become something else entirely.",
+  "Legends don't burn down villages.",
+  "You're much stronger than you think you are. Trust me.",
+  "A vigilante is just a man lost in the scramble for his own gratification.",
+  "I'm not going to kill you. I want you to tell all your friends about me.",
+  "All men have limits. They learn what they are and learn not to exceed them. I ignore mine.",
+  "Sometimes it's only madness that makes us what we are.",
+  "It's not who you are underneath, it's what you do that defines you.",
+  "The world doesn't make sense until you force it to.",
+  "Success is stumbling from failure to failure with no loss of enthusiasm.",
+];
+
+function getRandomQuote() {
+  return BATMAN_QUOTES[Math.floor(Math.random() * BATMAN_QUOTES.length)];
+}
+
 function readStorage<T>(key: string, fallback: T): T {
   try {
     const raw = localStorage.getItem(key);
@@ -104,6 +142,9 @@ export default function App() {
   const [cloneSourceOrder, setCloneSourceOrder] = useState<CreatedOrder | null>(null);
   const [fetchingApiId, setFetchingApiId] = useState<string | null>(null);
   const [controllingOrderId, setControllingOrderId] = useState<string | null>(null);
+  
+  // 🦇 NEW: Random quote on each visit/refresh
+  const [batmanQuote] = useState(() => getRandomQuote());
 
   const persistOrders = useCallback((next: CreatedOrder[]) => {
     setOrders(next);
@@ -334,7 +375,10 @@ export default function App() {
           {/* Batman Logo */}
           <div className="mb-8 space-y-1">
             <div className="flex items-center gap-3">
-              <span className="text-3xl">🦇</span>
+              <div className="relative">
+                <div className="absolute inset-0 animate-ping rounded-full bg-yellow-500/20" style={{ animationDuration: '3s' }} />
+                <span className="relative text-3xl">🦇</span>
+              </div>
               <div>
                 <h1 className="text-xl font-bold tracking-tight text-yellow-400">GOTHAM</h1>
                 <p className="text-xs text-yellow-600">SMM Command Center</p>
@@ -377,10 +421,28 @@ export default function App() {
             })}
           </nav>
 
-          {/* Batman Quote */}
-          <div className="mt-8 rounded-xl border border-yellow-500/20 bg-yellow-500/5 p-4">
-            <p className="text-xs italic text-yellow-500/70">"It's not who I am underneath, but what I do that defines me."</p>
-            <p className="mt-2 text-right text-xs text-yellow-600">— Batman</p>
+          {/* 🦇 MOTIVATIONAL BATMAN QUOTE */}
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.2 }}
+            className="mt-8 rounded-xl border border-yellow-500/20 bg-yellow-500/5 p-4"
+          >
+            <div className="mb-2 flex items-center gap-2">
+              <span className="text-yellow-400">🦇</span>
+              <span className="text-[10px] font-medium uppercase tracking-wider text-yellow-600">
+                Quote of the Visit
+              </span>
+            </div>
+            <p className="text-xs italic leading-relaxed text-yellow-500/70">
+              "{batmanQuote}"
+            </p>
+            <p className="mt-2 text-right text-[10px] font-medium text-yellow-600">— Batman</p>
+          </motion.div>
+
+          {/* Refresh hint */}
+          <div className="mt-4 rounded-lg border border-gray-800 bg-black/50 px-3 py-2 text-center">
+            <p className="text-[10px] text-gray-600">Refresh for new wisdom 🔄</p>
           </div>
         </aside>
 
