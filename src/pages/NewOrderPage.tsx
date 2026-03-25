@@ -144,46 +144,48 @@ export function NewOrderPage({ apis, bundles, orders, prefillOrder, onCreateOrde
       };
     }
   }, [config, seed]);
+
   const plan = useMemo(() => {
-  const basePlan = useClonedPlan && clonedPlan
-    ? { ...clonedPlan, runs: clonedPlan.runs || [] }
-    : generatedPlan;
+    const basePlan = useClonedPlan && clonedPlan
+      ? { ...clonedPlan, runs: clonedPlan.runs || [] }
+      : generatedPlan;
 
-  const runs = basePlan?.runs || [];
+    const runs = basePlan?.runs || [];
 
-  if (runs.length <= 1) return basePlan;
+    if (runs.length <= 1) return basePlan;
 
-  const baseIntervalMin = basePlan.approximateIntervalMin || 120;
+    const baseIntervalMin = basePlan.approximateIntervalMin || 120;
 
-  const newRuns = runs.map((run, i) => {
-    if (i === 0) return run;
+    const newRuns = runs.map((run, i) => {
+      if (i === 0) return run;
 
-    const prevTime = new Date(runs[i - 1].at).getTime();
-    const hour = new Date(prevTime).getHours();
+      const prevTime = new Date(runs[i - 1].at).getTime();
+      const hour = new Date(prevTime).getHours();
 
-    let multiplier = 1;
+      let multiplier = 1;
 
-    if (hour >= 0 && hour < 6) multiplier = 1.4;
-    else if (hour >= 6 && hour < 12) multiplier = 1.1;
-    else if (hour >= 18 && hour <= 23) multiplier = 0.85;
+      if (hour >= 0 && hour < 6) multiplier = 1.4;
+      else if (hour >= 6 && hour < 12) multiplier = 1.1;
+      else if (hour >= 18 && hour <= 23) multiplier = 0.85;
 
-    const baseIntervalMs = baseIntervalMin * 60 * 1000 * multiplier;
-    const variation = baseIntervalMs * (Math.random() * 0.4 - 0.2);
-    const newTime = prevTime + baseIntervalMs + variation;
+      const baseIntervalMs = baseIntervalMin * 60 * 1000 * multiplier;
+      const variation = baseIntervalMs * (Math.random() * 0.4 - 0.2);
+      const newTime = prevTime + baseIntervalMs + variation;
+
+      return {
+        ...run,
+        at: new Date(newTime),
+      };
+    });
 
     return {
-      ...run,
-      at: new Date(newTime),
+      ...basePlan,
+      runs: newRuns,
     };
-  });
+  }, [useClonedPlan, clonedPlan, generatedPlan]);
 
-  return {
-    ...basePlan,
-    runs: newRuns,
-  };
-}, [useClonedPlan, clonedPlan, generatedPlan]
-  );
   const safePlan = useMemo(() => ({ ...plan, runs: plan?.runs || [] }), [plan]);
+
   const bundleOptions = useMemo(() => {
     if (!selectedApiId) return bundles;
     return bundles.filter((bundle) => bundle.apiId === selectedApiId);
@@ -197,6 +199,35 @@ export function NewOrderPage({ apis, bundles, orders, prefillOrder, onCreateOrde
       return false;
     }
   }
+
+  const handleApplyPreset = (preset: QuickPatternPreset) => {
+    setUseClonedPlan(false);
+    setQuickPreset(preset);
+    if (preset === "viral-boost") {
+      setVariancePercent(48);
+      setDelivery({ mode: "preset", label: "12h", hours: 12 });
+    }
+    if (preset === "fast-start") {
+      setVariancePercent(32);
+      setDelivery({ mode: "preset", label: "6h", hours: 6 });
+    }
+    if (preset === "trending-push") {
+      setVariancePercent(40);
+      setDelivery({ mode: "preset", label: "24h", hours: 24 });
+    }
+    if (preset === "slow-burn") {
+      setVariancePercent(22);
+      setDelivery({ mode: "preset", label: "48h", hours: 48 });
+    }
+    setSeed((current) => current + 1);
+    setExpandedRuns(false);
+  };
+
+  const handleGenerate = () => {
+    setUseClonedPlan(false);
+    setSeed((current) => current + 1);
+    setExpandedRuns(false);
+  };
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 px-6 py-7">
@@ -300,153 +331,153 @@ export function NewOrderPage({ apis, bundles, orders, prefillOrder, onCreateOrde
             <p className="mt-3 text-xs text-gray-600">Estimated duration: {safePlan.estimatedDurationHours}h</p>
           </div>
 
+          {/* Schedule Preview Only */}
           <PatternGenerator
             plan={safePlan}
-            selectedPreset={quickPreset}
             expandedRuns={expandedRuns}
-            onApplyPreset={(preset) => {
-              setUseClonedPlan(false);
-              setQuickPreset(preset);
-              if (preset === "viral-boost") {
-                setVariancePercent(48);
-                setDelivery({ mode: "preset", label: "12h", hours: 12 });
-              }
-              if (preset === "fast-start") {
-                setVariancePercent(32);
-                setDelivery({ mode: "preset", label: "6h", hours: 6 });
-              }
-              if (preset === "trending-push") {
-                setVariancePercent(40);
-                setDelivery({ mode: "preset", label: "24h", hours: 24 });
-              }
-              if (preset === "slow-burn") {
-                setVariancePercent(22);
-                setDelivery({ mode: "preset", label: "48h", hours: 48 });
-              }
-              setSeed((current) => current + 1);
-              setExpandedRuns(false);
-            }}
             onToggleRuns={() => setExpandedRuns((prev) => !prev)}
-            onGenerate={() => {
-              setUseClonedPlan(false);
-              setSeed((current) => current + 1);
-              setExpandedRuns(false);
-            }}
           />
         </div>
       </div>
 
-      <GrowthGraph plan={safePlan} />
+      {/* Growth Graph with Preset Buttons */}
+      <GrowthGraph 
+        plan={safePlan}
+        selectedPreset={quickPreset}
+        onApplyPreset={handleApplyPreset}
+        onGenerate={handleGenerate}
+      />
 
       {/* 💰 PRICE CALCULATOR */}
-      {selectedBundleId && safePlan.runs.length > 0 && (() => {
-        const selectedBundle = bundles.find(b => b.id === selectedBundleId);
-        const selectedApi = apis.find(a => a.id === selectedApiId);
-        
-        if (!selectedBundle || !selectedApi) return null;
-        
-        // Get service rates from API
-        const viewsService = selectedApi.services.find(s => s.id === selectedBundle.serviceIds.views);
-        const likesService = selectedApi.services.find(s => s.id === selectedBundle.serviceIds.likes);
-        const sharesService = selectedApi.services.find(s => s.id === selectedBundle.serviceIds.shares);
-        const savesService = selectedApi.services.find(s => s.id === selectedBundle.serviceIds.saves);
-        
-        // Calculate totals
-        const totalViewsQuantity = (safePlan.runs || []).reduce((sum, run) => sum + run.views, 0);
-        const totalLikesQuantity = (safePlan.runs || []).reduce((sum, run) => sum + run.likes, 0);
-        const totalSharesQuantity = (safePlan.runs || []).reduce((sum, run) => sum + run.shares, 0);
-        const totalSavesQuantity = (safePlan.runs || []).reduce((sum, run) => sum + run.saves, 0);
-        
-        // Parse rates (rate is per 1000)
-        const viewsRate = parseFloat(viewsService?.rate || "0");
-        const likesRate = parseFloat(likesService?.rate || "0");
-        const sharesRate = parseFloat(sharesService?.rate || "0");
-        const savesRate = parseFloat(savesService?.rate || "0");
-        
-        // Calculate prices (quantity / 1000 * rate)
-        const viewsPrice = (totalViewsQuantity / 1000) * viewsRate;
-        const likesPrice = includeLikes ? (totalLikesQuantity / 1000) * likesRate : 0;
-        const sharesPrice = includeShares ? (totalSharesQuantity / 1000) * sharesRate : 0;
-        const savesPrice = includeSaves ? (totalSavesQuantity / 1000) * savesRate : 0;
-        
-        const totalPrice = viewsPrice + likesPrice + sharesPrice + savesPrice;
-        
-        return (
-          <div className="rounded-2xl border border-yellow-500/30 bg-gradient-to-br from-yellow-500/5 to-black p-5">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-yellow-400">💰 Price Calculator</h3>
-              <div className="text-right">
-                <p className="text-xs text-gray-600">Total Cost</p>
-                <p className="text-2xl font-bold text-yellow-400">₹{totalPrice.toFixed(2)}</p>
-              </div>
-            </div>
-            
-            <div className="space-y-2">
-              {/* Views */}
-              <div className="flex items-center justify-between rounded-lg border border-yellow-500/20 bg-black/50 px-3 py-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm">👁️</span>
-                  <div>
-                    <p className="text-xs text-gray-400">Views</p>
-                    <p className="text-xs text-gray-600">{totalViewsQuantity.toLocaleString()} × ₹{viewsRate}/1k</p>
-                  </div>
-                </div>
-                <p className="text-sm font-medium text-yellow-300">₹{viewsPrice.toFixed(2)}</p>
-              </div>
-              
-              {/* Likes */}
-              {includeLikes && totalLikesQuantity > 0 && (
-                <div className="flex items-center justify-between rounded-lg border border-yellow-500/20 bg-black/50 px-3 py-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm">❤️</span>
-                    <div>
-                      <p className="text-xs text-gray-400">Likes</p>
-                      <p className="text-xs text-gray-600">{totalLikesQuantity.toLocaleString()} × ₹{likesRate}/1k</p>
-                    </div>
-                  </div>
-                  <p className="text-sm font-medium text-yellow-300">₹{likesPrice.toFixed(2)}</p>
-                </div>
-              )}
-              
-              {/* Shares */}
-              {includeShares && totalSharesQuantity > 0 && (
-                <div className="flex items-center justify-between rounded-lg border border-yellow-500/20 bg-black/50 px-3 py-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm">🔄</span>
-                    <div>
-                      <p className="text-xs text-gray-400">Shares</p>
-                      <p className="text-xs text-gray-600">{totalSharesQuantity.toLocaleString()} × ₹{sharesRate}/1k</p>
-                    </div>
-                  </div>
-                  <p className="text-sm font-medium text-yellow-300">₹{sharesPrice.toFixed(2)}</p>
-                </div>
-              )}
-              
-              {/* Saves */}
-              {includeSaves && totalSavesQuantity > 0 && (
-                <div className="flex items-center justify-between rounded-lg border border-yellow-500/20 bg-black/50 px-3 py-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm">💾</span>
-                    <div>
-                      <p className="text-xs text-gray-400">Saves</p>
-                      <p className="text-xs text-gray-600">{totalSavesQuantity.toLocaleString()} × ₹{savesRate}/1k</p>
-                    </div>
-                  </div>
-                  <p className="text-sm font-medium text-yellow-300">₹{savesPrice.toFixed(2)}</p>
-                </div>
-              )}
-            </div>
-            
-            <div className="mt-4 rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-3 py-2">
-              <div className="flex items-center justify-between">
-                <p className="text-xs text-yellow-300">💡 Estimated Total</p>
-                <p className="text-lg font-bold text-yellow-400">₹{totalPrice.toFixed(2)}</p>
-              </div>
-              <p className="mt-1 text-[10px] text-gray-600">Based on panel rates (₹ per 1000)</p>
+      {selectedBundleId && safePlan.runs.length > 0 && (
+        <div className="rounded-2xl border border-yellow-500/30 bg-gradient-to-br from-yellow-500/5 to-black p-5">
+          <div className="mb-4 flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-yellow-400">💰 Price Calculator</h3>
+            <div className="text-right">
+              <p className="text-xs text-gray-600">Total Cost</p>
+              <p className="text-2xl font-bold text-yellow-400">
+                ₹{(() => {
+                  const selectedBundle = bundles.find(b => b.id === selectedBundleId);
+                  const selectedApi = apis.find(a => a.id === selectedApiId);
+                  
+                  if (!selectedBundle || !selectedApi) return "0.00";
+                  
+                  const viewsService = selectedApi.services.find(s => s.id === selectedBundle.serviceIds.views);
+                  const likesService = selectedApi.services.find(s => s.id === selectedBundle.serviceIds.likes);
+                  const sharesService = selectedApi.services.find(s => s.id === selectedBundle.serviceIds.shares);
+                  const savesService = selectedApi.services.find(s => s.id === selectedBundle.serviceIds.saves);
+                  
+                  const totalViewsQty = safePlan.runs.reduce((sum, run) => sum + (run.views || 0), 0);
+                  const totalLikesQty = safePlan.runs.reduce((sum, run) => sum + (run.likes || 0), 0);
+                  const totalSharesQty = safePlan.runs.reduce((sum, run) => sum + (run.shares || 0), 0);
+                  const totalSavesQty = safePlan.runs.reduce((sum, run) => sum + (run.saves || 0), 0);
+                  
+                  const viewsRate = parseFloat(viewsService?.rate || "0");
+                  const likesRate = parseFloat(likesService?.rate || "0");
+                  const sharesRate = parseFloat(sharesService?.rate || "0");
+                  const savesRate = parseFloat(savesService?.rate || "0");
+                  
+                  const viewsPrice = (totalViewsQty / 1000) * viewsRate;
+                  const likesPrice = includeLikes ? (totalLikesQty / 1000) * likesRate : 0;
+                  const sharesPrice = includeShares ? (totalSharesQty / 1000) * sharesRate : 0;
+                  const savesPrice = includeSaves ? (totalSavesQty / 1000) * savesRate : 0;
+                  
+                  return (viewsPrice + likesPrice + sharesPrice + savesPrice).toFixed(2);
+                })()}
+              </p>
             </div>
           </div>
-        );
-      })()}
+          
+          <div className="space-y-2">
+            {(() => {
+              const selectedBundle = bundles.find(b => b.id === selectedBundleId);
+              const selectedApi = apis.find(a => a.id === selectedApiId);
+              
+              if (!selectedBundle || !selectedApi) return null;
+              
+              const viewsService = selectedApi.services.find(s => s.id === selectedBundle.serviceIds.views);
+              const likesService = selectedApi.services.find(s => s.id === selectedBundle.serviceIds.likes);
+              const sharesService = selectedApi.services.find(s => s.id === selectedBundle.serviceIds.shares);
+              const savesService = selectedApi.services.find(s => s.id === selectedBundle.serviceIds.saves);
+              
+              const totalViewsQty = safePlan.runs.reduce((sum, run) => sum + (run.views || 0), 0);
+              const totalLikesQty = safePlan.runs.reduce((sum, run) => sum + (run.likes || 0), 0);
+              const totalSharesQty = safePlan.runs.reduce((sum, run) => sum + (run.shares || 0), 0);
+              const totalSavesQty = safePlan.runs.reduce((sum, run) => sum + (run.saves || 0), 0);
+              
+              const viewsRate = parseFloat(viewsService?.rate || "0");
+              const likesRate = parseFloat(likesService?.rate || "0");
+              const sharesRate = parseFloat(sharesService?.rate || "0");
+              const savesRate = parseFloat(savesService?.rate || "0");
+              
+              const viewsPrice = (totalViewsQty / 1000) * viewsRate;
+              const likesPrice = includeLikes ? (totalLikesQty / 1000) * likesRate : 0;
+              const sharesPrice = includeShares ? (totalSharesQty / 1000) * sharesRate : 0;
+              const savesPrice = includeSaves ? (totalSavesQty / 1000) * savesRate : 0;
+              
+              return (
+                <>
+                  {totalViewsQty > 0 && (
+                    <div className="flex items-center justify-between rounded-lg border border-yellow-500/20 bg-black/50 px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm">👁️</span>
+                        <div>
+                          <p className="text-xs text-gray-400">Views</p>
+                          <p className="text-xs text-gray-600">{totalViewsQty.toLocaleString()} × ₹{viewsRate}/1k</p>
+                        </div>
+                      </div>
+                      <p className="text-sm font-medium text-yellow-300">₹{viewsPrice.toFixed(2)}</p>
+                    </div>
+                  )}
+                  
+                  {includeLikes && totalLikesQty > 0 && (
+                    <div className="flex items-center justify-between rounded-lg border border-yellow-500/20 bg-black/50 px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm">❤️</span>
+                        <div>
+                          <p className="text-xs text-gray-400">Likes</p>
+                          <p className="text-xs text-gray-600">{totalLikesQty.toLocaleString()} × ₹{likesRate}/1k</p>
+                        </div>
+                      </div>
+                      <p className="text-sm font-medium text-yellow-300">₹{likesPrice.toFixed(2)}</p>
+                    </div>
+                  )}
+                  
+                  {includeShares && totalSharesQty > 0 && (
+                    <div className="flex items-center justify-between rounded-lg border border-yellow-500/20 bg-black/50 px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm">🔄</span>
+                        <div>
+                          <p className="text-xs text-gray-400">Shares</p>
+                          <p className="text-xs text-gray-600">{totalSharesQty.toLocaleString()} × ₹{sharesRate}/1k</p>
+                        </div>
+                      </div>
+                      <p className="text-sm font-medium text-yellow-300">₹{sharesPrice.toFixed(2)}</p>
+                    </div>
+                  )}
+                  
+                  {includeSaves && totalSavesQty > 0 && (
+                    <div className="flex items-center justify-between rounded-lg border border-yellow-500/20 bg-black/50 px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm">💾</span>
+                        <div>
+                          <p className="text-xs text-gray-400">Saves</p>
+                          <p className="text-xs text-gray-600">{totalSavesQty.toLocaleString()} × ₹{savesRate}/1k</p>
+                        </div>
+                      </div>
+                      <p className="text-sm font-medium text-yellow-300">₹{savesPrice.toFixed(2)}</p>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+          
+          <div className="mt-4 rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-3 py-2">
+            <p className="text-center text-[10px] text-gray-600">💡 Rates are per 1000 units from your selected panel</p>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center justify-between rounded-2xl border border-yellow-500/20 bg-gradient-to-br from-gray-900 to-black p-4">
         <p className="text-sm text-gray-500">Create mission will store the current plan, schedule, and engagement data.</p>
@@ -625,7 +656,7 @@ export function NewOrderPage({ apis, bundles, orders, prefillOrder, onCreateOrde
                     return !allRunsCompleted && order.status !== "cancelled";
                   })
                   .map((order) => order.link.replace(/\/+$/, "").toLowerCase())
-             );
+              );
               const createdLinks = new Set<string>();
               let successCount = 0;
               let failedCount = 0;
