@@ -6,7 +6,8 @@ export type PatternType =
   | "micro-burst"
   | "heartbeat"
   | "sawtooth"
-  | "fibonacci-spiral";
+  | "fibonacci-spiral"
+  | "manual";
 
 export type QuickPatternPreset = "viral-boost" | "fast-start" | "trending-push" | "slow-burn";
 
@@ -94,6 +95,9 @@ export interface Bundle {
 export interface CreatedOrder {
   id: string;
   name: string;
+  batchId?: string; // 🔧 NEW: Groups bulk orders together
+  batchIndex?: number; // 🔧 NEW: Index within batch (1, 2, 3...)
+  batchTotal?: number; // 🔧 NEW: Total orders in batch
   schedulerOrderId?: string;
   smmOrderId: string;
   link: string;
