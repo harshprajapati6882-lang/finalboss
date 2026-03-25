@@ -1,13 +1,23 @@
 import { useMemo } from "react";
 import { motion } from "framer-motion";
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import type { PatternPlan } from "../types/order";
+import type { PatternPlan, QuickPatternPreset } from "../types/order";
 
 interface GrowthGraphProps {
   plan: PatternPlan;
+  selectedPreset?: QuickPatternPreset | null;
+  onApplyPreset?: (preset: QuickPatternPreset) => void;
+  onGenerate?: () => void;
 }
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+const presetButtons: Array<{ label: string; value: QuickPatternPreset }> = [
+  { label: "🚀 Viral Boost", value: "viral-boost" },
+  { label: "⚡ Fast Start", value: "fast-start" },
+  { label: "🔥 Trending Push", value: "trending-push" },
+  { label: "🌊 Slow Burn", value: "slow-burn" },
+];
 
 function lineTypeForPattern(patternType: PatternPlan["patternType"]) {
   if (patternType === "sawtooth") return "stepAfter";
@@ -91,7 +101,7 @@ function buildGraphData(plan: PatternPlan) {
   return rows;
 }
 
-export function GrowthGraph({ plan }: GrowthGraphProps) {
+export function GrowthGraph({ plan, selectedPreset, onApplyPreset, onGenerate }: GrowthGraphProps) {
   const safePlan = useMemo(
     () => ({ ...plan, runs: plan?.runs || [] }),
     [plan]
@@ -101,7 +111,42 @@ export function GrowthGraph({ plan }: GrowthGraphProps) {
 
   return (
     <section className="rounded-2xl border border-yellow-500/20 bg-gradient-to-br from-gray-900 to-black p-5">
-      <h2 className="mb-4 text-lg font-semibold text-yellow-400">5. Growth Projection</h2>
+      {/* Header with Title and Preset Buttons */}
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h2 className="text-lg font-semibold text-yellow-400">📈 Growth Projection</h2>
+        
+        {/* Preset Buttons + New Pattern */}
+        {onApplyPreset && onGenerate && (
+          <div className="flex flex-wrap items-center gap-2">
+            {presetButtons.map((preset) => {
+              const active = selectedPreset === preset.value;
+              return (
+                <button
+                  key={preset.value}
+                  type="button"
+                  onClick={() => onApplyPreset(preset.value)}
+                  className={`rounded-lg border px-2.5 py-1.5 text-xs transition ${
+                    active
+                      ? "border-yellow-500/70 bg-yellow-500/20 text-yellow-300"
+                      : "border-gray-700 text-gray-500 hover:border-yellow-500/30 hover:text-yellow-400"
+                  }`}
+                >
+                  {preset.label}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              onClick={onGenerate}
+              className="rounded-lg border border-yellow-500/50 bg-yellow-500/10 px-3 py-1.5 text-xs font-medium text-yellow-300 transition hover:bg-yellow-500/20"
+            >
+              🔄 New Pattern
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Chart */}
       <motion.div
         key={`${safePlan.patternId}-${safePlan.totalRuns}`}
         initial={{ opacity: 0, y: 10 }}
