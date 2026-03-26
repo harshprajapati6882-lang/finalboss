@@ -1,4 +1,5 @@
 import type { ApiService } from "../types/order";
+import type { BackendRunInfo } from "../types/order";
 
 interface CreateOrderPayload {
   name?: string;
@@ -33,8 +34,14 @@ interface OrderControlResult {
   success: boolean;
   status?: "running" | "paused" | "cancelled" | "completed";
   completedRuns?: number;
-  runStatuses?: Array<"pending" | "completed" | "cancelled">;
+  runStatuses?: Array<"pending" | "completed" | "cancelled" | "retrying">;
   error?: string;
+}
+
+// 🔥 NEW: Fetch order runs result
+interface FetchOrderRunsResult {
+  schedulerOrderId: string;
+  runs: BackendRunInfo[];
 }
 
 const BACKEND_BASE_URL =
@@ -174,7 +181,6 @@ export async function createSmmOrder(payload: CreateOrderPayload): Promise<Creat
       ? String(payloadObject.schedulerOrderId)
       : undefined;
 
-  // 🔧 DEBUG: Log schedulerOrderId
   console.info("[Create Order] schedulerOrderId received:", schedulerOrderId);
 
   if (explicitError) {
@@ -240,7 +246,6 @@ export async function createSmmOrder(payload: CreateOrderPayload): Promise<Creat
   };
 }
 
-// 🔧 IMPROVED: Better cancel handling with retries and detailed logging
 export async function updateOrderControl(payload: {
   schedulerOrderId: string;
   action: "pause" | "resume" | "cancel";
@@ -253,7 +258,6 @@ export async function updateOrderControl(payload: {
     action: payload.action,
   });
 
-  // Retry logic for cancel action (important!)
   const maxRetries = payload.action === "cancel" ? 3 : 1;
   let lastError: Error | null = null;
 
@@ -299,7 +303,6 @@ export async function updateOrderControl(payload: {
         throw new Error(errorMsg);
       }
 
-      // 🔧 Verify cancel was successful
       if (payload.action === "cancel") {
         const resultStatus = payloadObject?.status;
         if (resultStatus !== "cancelled") {
@@ -318,7 +321,7 @@ export async function updateOrderControl(payload: {
             : undefined,
         completedRuns: typeof payloadObject?.completedRuns === "number" ? payloadObject.completedRuns : undefined,
         runStatuses: Array.isArray(payloadObject?.runStatuses)
-          ? (payloadObject.runStatuses as Array<"pending" | "completed" | "cancelled">)
+          ? (payloadObject.runStatuses as Array<"pending" | "completed" | "cancelled" | "retrying">)
           : undefined,
       };
     } catch (error) {
@@ -335,7 +338,34 @@ export async function updateOrderControl(payload: {
   throw lastError || new Error("Order control failed after all retries");
 }
 
-// 🔧 NEW: Batch cancel function for bulk orders
+// 🔥 NEW: Fetch detailed run info from backend
+export async function fetchOrderRuns(schedulerOrderId: string): Promise<FetchOrderRunsResult> {
+  const endpoint = `${BACKEND_BASE_URL.replace(/\/$/, "")}/api/order/runs/${schedulerOrderId}`;
+  
+  try {
+    const response = await fetch(endpoint, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch runs (HTTP ${response.status})`);
+    }
+
+    const data = await response.json();
+
+    return {
+      schedulerOrderId: data.schedulerOrderId,
+      runs: Array.isArray(data.runs) ? data.runs : [],
+    };
+  } catch (error) {
+    console.error(`[Fetch Order Runs] Error for ${schedulerOrderId}:`, error);
+    throw error;
+  }
+}
+
 export async function cancelMultipleOrders(schedulerOrderIds: string[]): Promise<{
   success: boolean;
   results: Array<{ schedulerOrderId: string; success: boolean; error?: string }>;
