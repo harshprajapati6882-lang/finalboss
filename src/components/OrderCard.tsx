@@ -176,7 +176,16 @@ export function OrderCard({ order, onControl, onClone, controlBusy }: OrderCardP
       <AnimatePresence initial={false}>
         {expanded && (
           <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}>
-            <RunTable runs={safeRuns} runStatuses={safeRunStatuses} runErrors={safeRunErrors} mode="logs" />
+            <RunTable 
+              runs={safeRuns} 
+              runStatuses={safeRunStatuses} 
+              runErrors={safeRunErrors}
+              runRetries={order.runRetries || []}
+              runOriginalTimes={order.runOriginalTimes || []}
+              runCurrentTimes={order.runCurrentTimes || []}
+              runReasons={order.runReasons || []}
+              mode="logs" 
+            />
           </motion.div>
         )}
       </AnimatePresence>
