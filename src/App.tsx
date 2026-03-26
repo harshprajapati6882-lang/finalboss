@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { APIsPage } from "./pages/APIsPage";
 import { BundlesPage } from "./pages/BundlesPage";
@@ -155,6 +155,10 @@ export default function App() {
   
   const [batmanQuote] = useState(() => getRandomQuote());
 
+  // 🔥 NEW: Track if sync is in progress to prevent render loops
+  const isSyncingRef = useRef(false);
+  const lastSyncTimeRef = useRef(0);
+
   const navigateToPage = useCallback((page: NavKey) => {
     setActivePage(page);
     localStorage.setItem("dev-smm-active-page", page);
@@ -183,24 +187,44 @@ export default function App() {
     localStorage.setItem("dev-smm-bundles", JSON.stringify(next));
   }, []);
 
-  // 🔥 NEW: Sync orders with backend
+  // 🔥 IMPROVED: Smarter sync that prevents render loops
   const syncOrdersWithBackend = useCallback(async () => {
-  // 🔥 FIX: Get fresh orders from state instead of closure
-  setOrders((currentOrders) => {
-    const activeOrders = currentOrders.filter(
-      order => order.schedulerOrderId && 
-      (order.status === "running" || order.status === "processing" || order.status === "paused")
-    );
-
-    if (activeOrders.length === 0) {
-      return currentOrders; // No changes
+    // Prevent concurrent syncs
+    if (isSyncingRef.current) {
+      console.log('[Sync] Already syncing, skipping...');
+      return;
     }
 
-    console.log(`[Sync] Syncing ${activeOrders.length} active orders...`);
+    // Prevent syncing too frequently (debounce)
+    const now = Date.now();
+    const timeSinceLastSync = now - lastSyncTimeRef.current;
+    if (timeSinceLastSync < 10000) { // Min 10 seconds between syncs
+      console.log('[Sync] Too soon since last sync, skipping...');
+      return;
+    }
 
-    // Fetch updates in background (don't block)
-    Promise.all(
-      activeOrders.map(async (order) => {
+    isSyncingRef.current = true;
+    lastSyncTimeRef.current = now;
+
+    try {
+      // Get current orders from localStorage (fresh copy)
+      const currentOrders = hydrateOrderDates(readStorage<CreatedOrder[]>("dev-smm-orders", []));
+
+      const activeOrders = currentOrders.filter(
+        order => order.schedulerOrderId && 
+        (order.status === "running" || order.status === "processing" || order.status === "paused")
+      );
+
+      if (activeOrders.length === 0) {
+        console.log('[Sync] No active orders to sync');
+        return;
+      }
+
+      console.log(`[Sync] Syncing ${activeOrders.length} active orders...`);
+
+      const updates: Array<{ orderId: string; data: Partial<CreatedOrder> }> = [];
+
+      for (const order of activeOrders) {
         try {
           const result = await fetchOrderRuns(order.schedulerOrderId!);
           
@@ -231,7 +255,7 @@ export default function App() {
 
           const completedRuns = runStatuses.filter(s => s === "completed").length;
 
-          return {
+          updates.push({
             orderId: order.id,
             data: {
               runRetries,
@@ -243,46 +267,53 @@ export default function App() {
               completedRuns,
               lastUpdatedAt: new Date().toISOString(),
             },
-          };
+          });
         } catch (error) {
           console.error(`[Sync] Failed to sync order ${order.id}:`, error);
-          return null;
         }
-      })
-    ).then((updates) => {
-      const validUpdates = updates.filter(u => u !== null);
-      
-      if (validUpdates.length > 0) {
+      }
+
+      if (updates.length > 0) {
         persistOrders((prev) =>
           prev.map((order) => {
-            const update = validUpdates.find((u) => u?.orderId === order.id);
+            const update = updates.find((u) => u.orderId === order.id);
             return update ? { ...order, ...update.data } : order;
           })
         );
-        console.log(`[Sync] ✅ Updated ${validUpdates.length} orders`);
+        console.log(`[Sync] ✅ Updated ${updates.length} orders`);
       }
-    });
+    } catch (error) {
+      console.error('[Sync] Error:', error);
+    } finally {
+      isSyncingRef.current = false;
+    }
+  }, [persistOrders]);
 
-    return currentOrders; // Return unchanged (updates happen via persistOrders)
-  });
-}, [persistOrders]); // 🔥 FIX: Remove 'orders' from dependencies
+  // 🔥 FIXED: Auto-sync every 5 MINUTES (300 seconds) - Only when on Orders page
+  useEffect(() => {
+    // Only sync when on orders or dashboard page
+    if (activePage !== 'orders' && activePage !== 'dashboard') {
+      console.log('[Sync] Not on orders/dashboard page, skipping sync setup');
+      return;
+    }
 
-  // 🔥 NEW: Auto-sync every 30 seconds
-useEffect(() => {
-  const interval = setInterval(() => {
-    syncOrdersWithBackend();
-  }, 30000); // 30 seconds
+    console.log('[Sync] Setting up 5-minute auto-sync...');
 
-  // Also sync on mount (after 5 seconds)
-  const initialSync = setTimeout(() => {
-    syncOrdersWithBackend();
-  }, 5000);
+    // Initial sync after 10 seconds
+    const initialSync = setTimeout(() => {
+      syncOrdersWithBackend();
+    }, 10000);
 
-  return () => {
-    clearInterval(interval);
-    clearTimeout(initialSync);
-  };
-}, []); // 🔥 FIX: Empty dependency array
+    // Then sync every 5 minutes
+    const interval = setInterval(() => {
+      syncOrdersWithBackend();
+    }, 300000); // 🔥 5 MINUTES (300,000 milliseconds)
+
+    return () => {
+      clearTimeout(initialSync);
+      clearInterval(interval);
+    };
+  }, [activePage]); // 🔥 Only re-setup when page changes
 
   const content = useMemo(() => {
     if (activePage === "new-order") {
@@ -360,7 +391,7 @@ useEffect(() => {
                   })
                 );
                 // 🔥 Sync immediately after control action
-                await syncOrdersWithBackend();
+                setTimeout(() => syncOrdersWithBackend(), 2000);
               } else {
                 applyLocalUpdate(action === "pause" ? "paused" : action === "resume" ? "running" : "cancelled");
               }
@@ -564,7 +595,7 @@ useEffect(() => {
           </motion.div>
 
           <div className="mt-4 rounded-lg border border-gray-800 bg-black/50 px-3 py-2 text-center">
-            <p className="text-[10px] text-gray-600">Refresh for new wisdom 🔄</p>
+            <p className="text-[10px] text-gray-600">Auto-syncs every 5 min ⚡</p>
           </div>
         </aside>
 
