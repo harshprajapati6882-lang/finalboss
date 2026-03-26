@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react"; // Add useRef
 import { motion, AnimatePresence } from "framer-motion";
 import type { CreatedOrder } from "../types/order";
 import { OrderCard } from "../components/OrderCard";
@@ -58,7 +58,14 @@ export function OrdersPage({
   const [query, setQuery] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("rows");
   const [activeTab, setActiveTab] = useState<TabType>("running");
+  // 🔥 FIXED: Use key to preserve popup across re-renders
   const [openedGroupId, setOpenedGroupId] = useState<string | null>(null);
+  const openedGroupIdRef = useRef<string | null>(null);
+
+  // Sync ref with state
+  useEffect(() => {
+    openedGroupIdRef.current = openedGroupId;
+  }, [openedGroupId]);
 
   function getProgress(order: CreatedOrder) {
     const safeRuns = order.runs || [];
