@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { CreatedOrder } from "../types/order";
 import { OrderCard } from "../components/OrderCard";
+import { RunTable } from "../components/RunTable"; // 🔥 NEW: Import RunTable
 
 interface OrdersPageProps {
   orders: CreatedOrder[];
@@ -12,7 +13,6 @@ interface OrdersPageProps {
   onDismissNotice: () => void;
 }
 
-// 🔧 UPDATED: Added "cancelled" and "failed" tabs
 type TabType = "running" | "completed" | "scheduled" | "cancelled";
 type ViewMode = "rows" | "columns";
 
@@ -40,7 +40,6 @@ const STATUS_COLORS: Record<string, { bg: string; text: string; dot: string }> =
   failed: { bg: "bg-red-500/15", text: "text-red-300", dot: "bg-red-400" },
 };
 
-// 🔧 UPDATED: Added cancelled tab
 const TABS: { key: TabType; label: string; icon: string }[] = [
   { key: "running", label: "Active", icon: "⚡" },
   { key: "scheduled", label: "Scheduled", icon: "⏱" },
@@ -104,7 +103,6 @@ export function OrdersPage({
   }
 
   function getRealStatus(order: CreatedOrder): string {
-    // 🔧 Check cancelled/failed first
     if (order.status === "cancelled") return "cancelled";
     if (order.status === "failed") return "failed";
     
@@ -138,12 +136,10 @@ export function OrdersPage({
   function getGroupStatus(group: GroupedOrder): string {
     const statuses = group.orders.map(o => getRealStatus(o));
     
-    // If ALL are cancelled or failed, show as cancelled
     if (statuses.every(s => s === "cancelled" || s === "failed")) return "cancelled";
     if (statuses.every(s => s === "completed")) return "completed";
     if (statuses.every(s => s === "scheduled")) return "scheduled";
     
-    // Mixed statuses
     if (statuses.some(s => s === "failed")) return "failed";
     if (statuses.some(s => s === "paused")) return "paused";
     if (statuses.some(s => s === "running")) return "running";
@@ -151,7 +147,6 @@ export function OrdersPage({
     return "running";
   }
 
-  // 🔧 UPDATED: Added cancelled category
   function getGroupCategory(group: GroupedOrder): TabType {
     const status = getGroupStatus(group);
     
@@ -216,7 +211,6 @@ export function OrdersPage({
       }
     });
     
-    // Sort orders within each group by batchIndex
     groups.forEach((group) => {
       group.orders.sort((a, b) => (a.batchIndex || 0) - (b.batchIndex || 0));
     });
@@ -224,7 +218,6 @@ export function OrdersPage({
     return Array.from(groups.values());
   }, [orders]);
 
-  // 🔧 UPDATED: Added cancelled category
   const categorizedGroups = useMemo(() => {
     const running: GroupedOrder[] = [];
     const completed: GroupedOrder[] = [];
@@ -239,7 +232,6 @@ export function OrdersPage({
       else if (category === "cancelled") cancelled.push(group);
     });
 
-    // Sort each category
     running.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     completed.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     scheduled.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
@@ -263,7 +255,6 @@ export function OrdersPage({
     );
   }, [categorizedGroups, activeTab, query]);
 
-  // Get opened group
   const openedGroup = useMemo(
     () => groupedOrders.find((group) => group.id === openedGroupId) ?? null,
     [groupedOrders, openedGroupId]
@@ -313,7 +304,6 @@ export function OrdersPage({
     );
   }
 
-  // 🔧 UPDATED: Added cancelled empty state
   function EmptyState({ tab }: { tab: TabType }) {
     const messages = {
       running: { title: "No active missions", description: "Missions in progress will appear here" },
@@ -338,7 +328,6 @@ export function OrdersPage({
     );
   }
 
-  // 🔧 UPDATED: Added cancelled to stats
   function StatsSummary() {
     const stats = [
       { label: "Active", count: categorizedGroups.running.length, color: "text-yellow-400", icon: "⚡" },
@@ -495,12 +484,18 @@ export function OrdersPage({
     );
   }
 
-  // Individual Link Card for Batch Orders Popup
+  // 🔥 UPDATED: Individual Link Card for Batch Orders Popup - NOW WITH RUN LIST
   function IndividualLinkCard({ order, index }: { order: CreatedOrder; index: number }) {
+    const [showRuns, setShowRuns] = useState(false); // 🔥 NEW: State for run list toggle
     const progress = getProgress(order);
     const status = getRealStatus(order);
     const isControlling = controllingOrderId === order.id;
     const isCancelled = status === "cancelled" || status === "failed";
+
+    // 🔥 NEW: Get run data
+    const safeRuns = order.runs || [];
+    const safeRunStatuses = order.runStatuses || [];
+    const safeRunErrors = order.runErrors || [];
 
     return (
       <motion.div
@@ -535,6 +530,12 @@ export function OrdersPage({
               </a>
             </div>
             <p className="mt-1 ml-8 text-[10px] text-gray-600 font-mono">{order.id}</p>
+            {/* 🔥 NEW: Show schedulerOrderId */}
+            {order.schedulerOrderId && (
+              <p className="ml-8 text-[9px] text-gray-700 font-mono">
+                Scheduler: {order.schedulerOrderId}
+              </p>
+            )}
           </div>
           <StatusBadge status={status} />
         </div>
@@ -643,7 +644,60 @@ export function OrdersPage({
           >
             🔗 Open
           </a>
+
+          {/* 🔥 NEW: View Runs Toggle Button */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowRuns(!showRuns);
+            }}
+            className={`flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-medium transition ml-auto ${
+              showRuns 
+                ? 'border-yellow-500/50 bg-yellow-500/20 text-yellow-300' 
+                : 'border-yellow-500/30 bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20'
+            }`}
+          >
+            {showRuns ? "🔼 Hide Runs" : `📋 View Runs (${safeRuns.length})`}
+          </button>
         </div>
+
+        {/* 🔥 NEW: Run List Table */}
+        <AnimatePresence>
+          {showRuns && safeRuns.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              className="mt-4 ml-8 overflow-hidden"
+            >
+              <div className="rounded-lg border border-yellow-500/20 bg-black/50 p-3">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-xs font-semibold text-yellow-400">
+                    📋 Run Schedule ({safeRuns.length} runs)
+                  </h4>
+                  <span className="text-[10px] text-gray-600">
+                    {progress.completed} completed
+                  </span>
+                </div>
+                
+                {/* Run Table */}
+                <RunTable 
+                  runs={safeRuns} 
+                  runStatuses={safeRunStatuses} 
+                  runErrors={safeRunErrors} 
+                  mode="logs" 
+                />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* 🔥 NEW: Show message if no runs */}
+        {showRuns && safeRuns.length === 0 && (
+          <div className="mt-4 ml-8 rounded-lg border border-dashed border-gray-700 bg-black/30 p-4 text-center">
+            <p className="text-xs text-gray-500">No runs scheduled for this order</p>
+          </div>
+        )}
       </motion.div>
     );
   }
@@ -661,6 +715,11 @@ export function OrdersPage({
         counts[status] = (counts[status] || 0) + 1;
       });
       return counts;
+    }, [group.orders]);
+
+    // 🔥 NEW: Calculate total runs across all orders in batch
+    const totalRunsInBatch = useMemo(() => {
+      return group.orders.reduce((sum, order) => sum + (order.runs?.length || 0), 0);
     }, [group.orders]);
 
     return (
@@ -706,8 +765,8 @@ export function OrdersPage({
               </button>
             </div>
 
-            {/* Overall Stats */}
-            <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {/* Overall Stats - 🔥 UPDATED: Added Total Runs */}
+            <div className="mt-4 grid grid-cols-2 sm:grid-cols-5 gap-3">
               <div className="rounded-lg bg-gray-900 px-3 py-2 text-center">
                 <p className="text-xl font-bold text-yellow-400">{group.linksCount}</p>
                 <p className="text-[10px] text-gray-500">Total Links</p>
@@ -715,6 +774,11 @@ export function OrdersPage({
               <div className="rounded-lg bg-gray-900 px-3 py-2 text-center">
                 <p className="text-xl font-bold text-yellow-400">{(group.totalViews / 1000).toFixed(0)}k</p>
                 <p className="text-[10px] text-gray-500">Total Views</p>
+              </div>
+              {/* 🔥 NEW: Total Runs Card */}
+              <div className="rounded-lg bg-gray-900 px-3 py-2 text-center">
+                <p className="text-xl font-bold text-blue-400">{totalRunsInBatch}</p>
+                <p className="text-[10px] text-gray-500">Total Runs</p>
               </div>
               <div className="rounded-lg bg-gray-900 px-3 py-2 text-center">
                 <p className={`text-xl font-bold ${isCancelled ? 'text-red-400' : 'text-emerald-400'}`}>
@@ -793,7 +857,7 @@ export function OrdersPage({
           {/* Individual Links List */}
           <div className="flex-1 overflow-y-auto p-5">
             <h4 className="text-sm font-semibold text-gray-400 mb-3">
-              📋 Individual Links ({group.orders.length})
+              📋 Individual Links ({group.orders.length}) - Click "View Runs" to see run schedule
             </h4>
             <div className="space-y-3">
               {group.orders.map((order, index) => (
