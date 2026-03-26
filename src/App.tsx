@@ -268,16 +268,21 @@ export default function App() {
 }, [persistOrders]); // 🔥 FIX: Remove 'orders' from dependencies
 
   // 🔥 NEW: Auto-sync every 30 seconds
-  useEffect(() => {
-    const interval = setInterval(() => {
-      syncOrdersWithBackend();
-    }, 30000); // 30 seconds
-
-    // Also sync immediately on mount
+useEffect(() => {
+  const interval = setInterval(() => {
     syncOrdersWithBackend();
+  }, 30000); // 30 seconds
 
-    return () => clearInterval(interval);
-  }, [syncOrdersWithBackend]);
+  // Also sync on mount (after 5 seconds)
+  const initialSync = setTimeout(() => {
+    syncOrdersWithBackend();
+  }, 5000);
+
+  return () => {
+    clearInterval(interval);
+    clearTimeout(initialSync);
+  };
+}, []); // 🔥 FIX: Empty dependency array
 
   const content = useMemo(() => {
     if (activePage === "new-order") {
