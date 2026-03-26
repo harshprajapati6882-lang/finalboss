@@ -185,78 +185,87 @@ export default function App() {
 
   // 🔥 NEW: Sync orders with backend
   const syncOrdersWithBackend = useCallback(async () => {
-    const activeOrders = orders.filter(
+  // 🔥 FIX: Get fresh orders from state instead of closure
+  setOrders((currentOrders) => {
+    const activeOrders = currentOrders.filter(
       order => order.schedulerOrderId && 
       (order.status === "running" || order.status === "processing" || order.status === "paused")
     );
 
-    if (activeOrders.length === 0) return;
+    if (activeOrders.length === 0) {
+      return currentOrders; // No changes
+    }
 
     console.log(`[Sync] Syncing ${activeOrders.length} active orders...`);
 
-    const updates: Array<{ orderId: string; data: Partial<CreatedOrder> }> = [];
+    // Fetch updates in background (don't block)
+    Promise.all(
+      activeOrders.map(async (order) => {
+        try {
+          const result = await fetchOrderRuns(order.schedulerOrderId!);
+          
+          const runRetries: number[] = [];
+          const runOriginalTimes: string[] = [];
+          const runCurrentTimes: string[] = [];
+          const runReasons: string[] = [];
+          const runStatuses: RunStatus[] = [];
+          const runErrors: string[] = [];
 
-    for (const order of activeOrders) {
-      try {
-        const result = await fetchOrderRuns(order.schedulerOrderId!);
-        
-        // Map backend runs to frontend format
-        const runRetries: number[] = [];
-        const runOriginalTimes: string[] = [];
-        const runCurrentTimes: string[] = [];
-        const runReasons: string[] = [];
-        const runStatuses: RunStatus[] = [];
-        const runErrors: string[] = [];
+          result.runs.forEach((backendRun) => {
+            runRetries.push(backendRun.retryCount || 0);
+            runOriginalTimes.push(backendRun.originalTime);
+            runCurrentTimes.push(backendRun.currentTime);
+            runReasons.push(backendRun.retryReason || "");
+            runErrors.push(backendRun.lastError || "");
 
-        result.runs.forEach((backendRun) => {
-          runRetries.push(backendRun.retryCount || 0);
-          runOriginalTimes.push(backendRun.originalTime);
-          runCurrentTimes.push(backendRun.currentTime);
-          runReasons.push(backendRun.retryReason || "");
-          runErrors.push(backendRun.lastError || "");
+            if (backendRun.cancelled) {
+              runStatuses.push("cancelled");
+            } else if (backendRun.done) {
+              runStatuses.push("completed");
+            } else if (backendRun.retryCount > 0) {
+              runStatuses.push("retrying");
+            } else {
+              runStatuses.push("pending");
+            }
+          });
 
-          // Determine status
-          if (backendRun.cancelled) {
-            runStatuses.push("cancelled");
-          } else if (backendRun.done) {
-            runStatuses.push("completed");
-          } else if (backendRun.retryCount > 0) {
-            runStatuses.push("retrying");
-          } else {
-            runStatuses.push("pending");
-          }
-        });
+          const completedRuns = runStatuses.filter(s => s === "completed").length;
 
-        const completedRuns = runStatuses.filter(s => s === "completed").length;
-
-        updates.push({
-          orderId: order.id,
-          data: {
-            runRetries,
-            runOriginalTimes,
-            runCurrentTimes,
-            runReasons,
-            runStatuses,
-            runErrors,
-            completedRuns,
-            lastUpdatedAt: new Date().toISOString(),
-          },
-        });
-      } catch (error) {
-        console.error(`[Sync] Failed to sync order ${order.id}:`, error);
+          return {
+            orderId: order.id,
+            data: {
+              runRetries,
+              runOriginalTimes,
+              runCurrentTimes,
+              runReasons,
+              runStatuses,
+              runErrors,
+              completedRuns,
+              lastUpdatedAt: new Date().toISOString(),
+            },
+          };
+        } catch (error) {
+          console.error(`[Sync] Failed to sync order ${order.id}:`, error);
+          return null;
+        }
+      })
+    ).then((updates) => {
+      const validUpdates = updates.filter(u => u !== null);
+      
+      if (validUpdates.length > 0) {
+        persistOrders((prev) =>
+          prev.map((order) => {
+            const update = validUpdates.find((u) => u?.orderId === order.id);
+            return update ? { ...order, ...update.data } : order;
+          })
+        );
+        console.log(`[Sync] ✅ Updated ${validUpdates.length} orders`);
       }
-    }
+    });
 
-    if (updates.length > 0) {
-      persistOrders((prev) =>
-        prev.map((order) => {
-          const update = updates.find((u) => u.orderId === order.id);
-          return update ? { ...order, ...update.data } : order;
-        })
-      );
-      console.log(`[Sync] ✅ Updated ${updates.length} orders`);
-    }
-  }, [orders, persistOrders]);
+    return currentOrders; // Return unchanged (updates happen via persistOrders)
+  });
+}, [persistOrders]); // 🔥 FIX: Remove 'orders' from dependencies
 
   // 🔥 NEW: Auto-sync every 30 seconds
   useEffect(() => {
