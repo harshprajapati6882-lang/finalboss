@@ -684,7 +684,11 @@ export function OrdersPage({
                 <RunTable 
                   runs={safeRuns} 
                   runStatuses={safeRunStatuses} 
-                  runErrors={safeRunErrors} 
+                  runErrors={safeRunErrors}
+                  runRetries={order.runRetries || []}
+                  runOriginalTimes={order.runOriginalTimes || []}
+                  runCurrentTimes={order.runCurrentTimes || []}
+                  runReasons={order.runReasons || []}
                   mode="logs" 
                 />
               </div>
