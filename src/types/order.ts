@@ -58,7 +58,8 @@ export interface PatternPlan {
 
 export type OrderStatus = "running" | "paused" | "cancelled" | "completed" | "processing" | "failed";
 
-export type RunStatus = "pending" | "completed" | "cancelled";
+// 🔥 UPDATED: Extended run status to include "retrying"
+export type RunStatus = "pending" | "completed" | "cancelled" | "retrying";
 
 export interface ApiService {
   id: string;
@@ -92,12 +93,30 @@ export interface Bundle {
   };
 }
 
+// 🔥 NEW: Backend run info (from /api/order/runs endpoint)
+export interface BackendRunInfo {
+  id: string;
+  label: string;
+  quantity: number;
+  originalTime: string;
+  currentTime: string;
+  done: boolean;
+  cancelled: boolean;
+  paused: boolean;
+  isExecuting: boolean;
+  retryCount: number;
+  retryReason: string | null;
+  lastError: string | null;
+  executedAt: string | null;
+  smmOrderId: string | null;
+}
+
 export interface CreatedOrder {
   id: string;
   name: string;
-  batchId?: string; // 🔧 NEW: Groups bulk orders together
-  batchIndex?: number; // 🔧 NEW: Index within batch (1, 2, 3...)
-  batchTotal?: number; // 🔧 NEW: Total orders in batch
+  batchId?: string;
+  batchIndex?: number;
+  batchTotal?: number;
   schedulerOrderId?: string;
   smmOrderId: string;
   link: string;
@@ -116,8 +135,14 @@ export interface CreatedOrder {
   selectedBundle: string;
   status: OrderStatus;
   completedRuns: number;
+  // 🔥 UPDATED: Extended run tracking
   runStatuses: RunStatus[];
   runErrors?: string[];
+  runRetries?: number[];           // 🔥 NEW: Retry count per run
+  runOriginalTimes?: string[];     // 🔥 NEW: Original scheduled times
+  runCurrentTimes?: string[];      // 🔥 NEW: Current scheduled times (may differ if rescheduled)
+  runReasons?: string[];           // 🔥 NEW: Retry reasons
+  // Other fields
   errorMessage?: string;
   createdAt: string;
   lastUpdatedAt?: string;
