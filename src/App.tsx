@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { APIsPage } from "./pages/APIsPage";
 import { BundlesPage } from "./pages/BundlesPage";
@@ -6,7 +6,7 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { NewOrderPage } from "./pages/NewOrderPage";
 import { OrdersPage } from "./pages/OrdersPage";
 import type { ApiPanel, Bundle, CreatedOrder, RunStatus } from "./types/order";
-import { fetchServices, updateOrderControl } from "./utils/api";
+import { fetchServices, updateOrderControl, fetchOrderRuns } from "./utils/api";
 import { cn } from "./utils/cn";
 
 type NavKey = "dashboard" | "new-order" | "orders" | "apis" | "bundles";
@@ -19,7 +19,6 @@ const NAV_ITEMS: { key: NavKey; label: string; icon: string }[] = [
   { key: "bundles", label: "Bundles", icon: "📁" },
 ];
 
-// 🦇 30 MOTIVATIONAL BATMAN QUOTES
 const BATMAN_QUOTES = [
   "It's not who I am underneath, but what I do that defines me.",
   "The night is darkest just before the dawn.",
@@ -87,7 +86,7 @@ function hydrateOrderDates(orders: CreatedOrder[]): CreatedOrder[] {
     const safeRunStatuses: RunStatus[] = Array.isArray(order?.runStatuses)
       ? safeRuns.map((_, index) => {
           const next = order.runStatuses[index];
-          return next === "completed" || next === "cancelled" ? next : "pending";
+          return next === "completed" || next === "cancelled" || next === "retrying" ? next : "pending";
         })
       : safeRuns.map(() => "pending");
     const safeRunErrors = Array.isArray(order?.runErrors)
@@ -111,6 +110,10 @@ function hydrateOrderDates(orders: CreatedOrder[]): CreatedOrder[] {
       completedRuns: Number.isFinite(order?.completedRuns) ? order.completedRuns : 0,
       runStatuses: safeRunStatuses,
       runErrors: safeRunErrors,
+      runRetries: order?.runRetries || [],
+      runOriginalTimes: order?.runOriginalTimes || [],
+      runCurrentTimes: order?.runCurrentTimes || [],
+      runReasons: order?.runReasons || [],
       lastUpdatedAt: order?.lastUpdatedAt ?? order?.createdAt ?? new Date().toISOString(),
       runs: safeRuns,
     };
@@ -157,7 +160,6 @@ export default function App() {
     localStorage.setItem("dev-smm-active-page", page);
   }, []);
 
-  // 🔧 FIX: Updated to support functional updates for bulk orders
   const persistOrders = useCallback((next: CreatedOrder[] | ((prev: CreatedOrder[]) => CreatedOrder[])) => {
     if (typeof next === 'function') {
       setOrders((prev) => {
@@ -181,6 +183,93 @@ export default function App() {
     localStorage.setItem("dev-smm-bundles", JSON.stringify(next));
   }, []);
 
+  // 🔥 NEW: Sync orders with backend
+  const syncOrdersWithBackend = useCallback(async () => {
+    const activeOrders = orders.filter(
+      order => order.schedulerOrderId && 
+      (order.status === "running" || order.status === "processing" || order.status === "paused")
+    );
+
+    if (activeOrders.length === 0) return;
+
+    console.log(`[Sync] Syncing ${activeOrders.length} active orders...`);
+
+    const updates: Array<{ orderId: string; data: Partial<CreatedOrder> }> = [];
+
+    for (const order of activeOrders) {
+      try {
+        const result = await fetchOrderRuns(order.schedulerOrderId!);
+        
+        // Map backend runs to frontend format
+        const runRetries: number[] = [];
+        const runOriginalTimes: string[] = [];
+        const runCurrentTimes: string[] = [];
+        const runReasons: string[] = [];
+        const runStatuses: RunStatus[] = [];
+        const runErrors: string[] = [];
+
+        result.runs.forEach((backendRun) => {
+          runRetries.push(backendRun.retryCount || 0);
+          runOriginalTimes.push(backendRun.originalTime);
+          runCurrentTimes.push(backendRun.currentTime);
+          runReasons.push(backendRun.retryReason || "");
+          runErrors.push(backendRun.lastError || "");
+
+          // Determine status
+          if (backendRun.cancelled) {
+            runStatuses.push("cancelled");
+          } else if (backendRun.done) {
+            runStatuses.push("completed");
+          } else if (backendRun.retryCount > 0) {
+            runStatuses.push("retrying");
+          } else {
+            runStatuses.push("pending");
+          }
+        });
+
+        const completedRuns = runStatuses.filter(s => s === "completed").length;
+
+        updates.push({
+          orderId: order.id,
+          data: {
+            runRetries,
+            runOriginalTimes,
+            runCurrentTimes,
+            runReasons,
+            runStatuses,
+            runErrors,
+            completedRuns,
+            lastUpdatedAt: new Date().toISOString(),
+          },
+        });
+      } catch (error) {
+        console.error(`[Sync] Failed to sync order ${order.id}:`, error);
+      }
+    }
+
+    if (updates.length > 0) {
+      persistOrders((prev) =>
+        prev.map((order) => {
+          const update = updates.find((u) => u.orderId === order.id);
+          return update ? { ...order, ...update.data } : order;
+        })
+      );
+      console.log(`[Sync] ✅ Updated ${updates.length} orders`);
+    }
+  }, [orders, persistOrders]);
+
+  // 🔥 NEW: Auto-sync every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      syncOrdersWithBackend();
+    }, 30000); // 30 seconds
+
+    // Also sync immediately on mount
+    syncOrdersWithBackend();
+
+    return () => clearInterval(interval);
+  }, [syncOrdersWithBackend]);
+
   const content = useMemo(() => {
     if (activePage === "new-order") {
       return (
@@ -189,7 +278,6 @@ export default function App() {
           bundles={bundles}
           orders={orders}
           prefillOrder={cloneSourceOrder}
-          // 🔧 FIX: Use functional update to prevent bulk order loss
           onCreateOrder={(order) => persistOrders((prev) => [order, ...prev])}
           onNavigateToOrders={(notice) => {
             if (notice) setOrdersNotice(notice);
@@ -213,12 +301,11 @@ export default function App() {
           }}
           onControlOrder={async (order, action) => {
             const applyLocalUpdate = (nextStatus: CreatedOrder["status"]) => {
-              // 🔧 FIX: Use functional update here too
               persistOrders((prev) =>
                 prev.map((item) => {
                   if (item.id !== order.id) return item;
                   if (nextStatus === "cancelled") {
-                    const nextRunStatuses = item.runStatuses.map((status) => (status === "pending" ? "cancelled" : status));
+                    const nextRunStatuses = item.runStatuses.map((status) => (status === "pending" || status === "retrying" ? "cancelled" : status));
                     const completedRuns = nextRunStatuses.filter((status) => status === "completed").length;
                     return {
                       ...item,
@@ -246,7 +333,6 @@ export default function App() {
                 });
                 const nextStatus =
                   result.status || (action === "pause" ? "paused" : action === "resume" ? "running" : "cancelled");
-                // 🔧 FIX: Use functional update
                 persistOrders((prev) =>
                   prev.map((item) => {
                     if (item.id !== order.id) return item;
@@ -259,6 +345,8 @@ export default function App() {
                     };
                   })
                 );
+                // 🔥 Sync immediately after control action
+                await syncOrdersWithBackend();
               } else {
                 applyLocalUpdate(action === "pause" ? "paused" : action === "resume" ? "running" : "cancelled");
               }
@@ -390,14 +478,12 @@ export default function App() {
         }}
       />
     );
-  }, [activePage, apis, bundles, orders, fetchingApiId, controllingOrderId, ordersNotice, cloneSourceOrder, navigateToPage, persistOrders, persistApis, persistBundles]);
+  }, [activePage, apis, bundles, orders, fetchingApiId, controllingOrderId, ordersNotice, cloneSourceOrder, navigateToPage, persistOrders, persistApis, persistBundles, syncOrdersWithBackend]);
 
   return (
     <div className="min-h-screen bg-black text-gray-100">
       <div className="flex min-h-screen">
-        {/* Batman Sidebar */}
         <aside className="w-64 border-r border-yellow-500/20 bg-gradient-to-b from-gray-950 to-black p-6">
-          {/* Batman Logo */}
           <div className="mb-8 space-y-1">
             <div className="flex items-center gap-3">
               <div className="relative">
@@ -411,7 +497,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* Navigation */}
           <nav className="space-y-2">
             {NAV_ITEMS.map((item) => {
               const isActive = activePage === item.key;
@@ -446,7 +531,6 @@ export default function App() {
             })}
           </nav>
 
-          {/* 🦇 MOTIVATIONAL BATMAN QUOTE */}
           <motion.div 
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -465,13 +549,11 @@ export default function App() {
             <p className="mt-2 text-right text-[10px] font-medium text-yellow-600">— Batman</p>
           </motion.div>
 
-          {/* Refresh hint */}
           <div className="mt-4 rounded-lg border border-gray-800 bg-black/50 px-3 py-2 text-center">
             <p className="text-[10px] text-gray-600">Refresh for new wisdom 🔄</p>
           </div>
         </aside>
 
-        {/* Main Content */}
         <main className="flex-1 overflow-y-auto bg-gradient-to-br from-gray-950 via-black to-gray-950">{content}</main>
       </div>
     </div>
