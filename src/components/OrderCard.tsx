@@ -71,26 +71,19 @@ export function OrderCard({ order, onControl, onClone, controlBusy }: OrderCardP
 
     return order.status;
   }, [order, nowMs]);
+  
   const shortLink =
     order.link.length > 56 ? `${order.link.slice(0, 36)}...${order.link.slice(-14)}` : order.link;
 
+  // 🔥 FIX: Remove the legacy /api/cancel call - use onControl for everything
   const handleControl = async (action: "pause" | "resume" | "cancel") => {
     try {
       if (action === "cancel") {
         const confirmCancel = window.confirm("Are you sure you want to cancel this mission?");
         if (!confirmCancel) return;
-
-        await fetch("https://backend-y30y.onrender.com/api/cancel", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            link: order.link,
-          }),
-        });
       }
 
+      // ✅ FIX: Always use onControl (which calls /api/order/control with schedulerOrderId)
       onControl(order, action);
 
     } catch (err) {
@@ -109,6 +102,11 @@ export function OrderCard({ order, onControl, onClone, controlBusy }: OrderCardP
           <p className="max-w-xl truncate text-sm text-gray-500" title={order.link || "No link provided"}>
             {shortLink || "No link provided"}
           </p>
+          {order.schedulerOrderId && (
+            <p className="text-xs text-gray-600 font-mono">
+              Scheduler: {order.schedulerOrderId}
+            </p>
+          )}
         </div>
         <div className="space-y-2 text-right">
           <p className="text-sm text-gray-500">Panel ID: <span className="font-semibold text-yellow-300">{order.smmOrderId}</span></p>
